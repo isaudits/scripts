@@ -1,5 +1,9 @@
 #!/usr/bin/env python
 '''
+@author: Matthew C. Jones, CPA, CISA, OSCP
+IS Audits & Consulting, LLC
+TJS Deemer Dana LLP
+
 Ettercap sniffer automation script
 
 Plugin requires that ettercap run as root (uid = 0) and that IPTables parameters are

@@ -1,5 +1,14 @@
 #!/usr/bin/python
+'''
+@author: Matthew C. Jones, CPA, CISA, OSCP
+IS Audits & Consulting, LLC
+TJS Deemer Dana LLP
 
+Automation script for running a series of transforms in John The Ripper against
+a password hash file.
+
+Acceptable inputs include pwdump and metasploit (eg. netntlmv2)
+'''
 import sys
 import argparse
 import subprocess

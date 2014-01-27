@@ -3,7 +3,19 @@ scripts
 
 Miscellaneous scripts for penetration testing
 
+--------------------------------------------------------------------------------------------------
+
+Matthew C. Jones, CPA, CISA, OSCP
+
+IS Audits and Consulting, LLC - <http://www.isaudits.net/>
+
+TJS Deemer Dana - <http://www.tjsdd.com>
+
+---------------------------------------------------------------------------------------------------
+
 Many of these scripts were authored by others and may or may not contain modifications. Copyright info and credits have been maintained where applicable.
+
+---------------------------------------------------------------------------------------------------
 
 When not otherwise specified, scripts are licensed under GPL:
 

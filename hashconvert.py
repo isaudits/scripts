@@ -1,5 +1,13 @@
 #!/usr/bin/python
 
+'''
+@author: Matthew C. Jones, CPA, CISA, OSCP
+IS Audits & Consulting, LLC
+TJS Deemer Dana LLP
+
+Convert password hash files among Cain/L0phtcrack, PwDump, and Metasploit formats
+'''
+
 import sys
 import argparse
     
