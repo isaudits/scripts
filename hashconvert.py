@@ -32,13 +32,13 @@ def main(argv):
         remove_machines = False
     
     #pwdump format - <user>:<id>:<lanman pw>:<NT pw>:comment:homedir:
-    # jmorales:1001:AAD3B435B51404EEAAD3B435B51404EE:0A1E55D87719539687E73602FF486676:::
+    # username:1001:AAD3B435B51404EEAAD3B435B51404EE:0A1E55D87719539687E73602FF486676:::
     
     #metasploit format - <user>:<id>:<lanman pw>:<NT pw>    (same as pwdump but without last 3 columns)
-    # jmorales:1001:AAD3B435B51404EEAAD3B435B51404EE:0A1E55D87719539687E73602FF486676
+    # username:1001:AAD3B435B51404EEAAD3B435B51404EE:0A1E55D87719539687E73602FF486676
     
     #lc format - <user>:<???>:<???>:<lanman pw>:<NT pw>    
-    # jmorales:"":"":AAD3B435B51404EEAAD3B435B51404EE:0A1E55D87719539687E73602FF486676
+    # username:"":"":AAD3B435B51404EEAAD3B435B51404EE:0A1E55D87719539687E73602FF486676
     
     
     #Open up input file as test (separate instance) and read first line to determine the format; based on number of colons as separators
