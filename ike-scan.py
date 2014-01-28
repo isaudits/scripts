@@ -20,7 +20,7 @@ def main(argv):
     parser.add_argument("-a", "--alltransforms", action="store_true", help="show all responses, even if only notify response")
     parser.add_argument("--showbackoff", action="store_true", help="Show backoff (for fingerprinting)")
     parser.add_argument("--aggressive", action="store_true", help="Use IKE aggressive mode instead of main mode")
-    parser.add_argument("--pskcrack", action="store", help="Output aggressive mode PSK in pskcrack format with optional output file")
+    parser.add_argument("--pskcrack", action="store", help="Output aggressive mode PSK in pskcrack format to output file")
     parser.add_argument("--id", action="store", help="specify id to pass in aggressive mode handshake (Sonicwall default is 'GroupVPN'; Cisco default is peer IP)")
     parser.add_argument("--idtype", action="store", help="specify id type to pass in aggressive mode handshake (e.g. 1)")
     parser.add_argument("--scanall", action="store_true", help="continue scanning through all transforms; default is to stop after first handshake recd")
