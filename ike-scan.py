@@ -19,7 +19,8 @@ def main(argv):
     parser.add_argument("--showbackoff", action="store_true", help="Show backoff (for fingerprinting)")
     parser.add_argument("--aggressive", action="store_true", help="Use IKE aggressive mode instead of main mode")
     parser.add_argument("--pskcrack", action="store", help="Output aggressive mode PSK in pskcrack format with optional output file")
-    parser.add_argument("--id", action="store", help="specify id to pass in aggressive mode handshake")
+    parser.add_argument("--id", action="store", help="specify id to pass in aggressive mode handshake (Sonicwall default is 'GroupVPN'; Cisco default is peer IP)")
+    parser.add_argument("--extended", action="store_true", help="extended scan of all possible transforms; default is to stop after first handshake")
     parser.add_argument("--allresponses", action="store_true", help="show all responses, even if only notify response")
     
     args = parser.parse_args()  
@@ -58,18 +59,34 @@ def main(argv):
                         ikescan_command = ikescan_command + " --id=" + args.id
                     
                     p = subprocess.Popen(ikescan_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE,shell=True)
+                    p.wait()
                     out,err = p.communicate()
                     exitcode = p.returncode
                     
-                    if args.allresponses:
-                        regex_str = '[1-9][0-9]* returned'      #displays all results with returned responses (even notify)
-                    else:
-                        regex_str = 'shake returned'           #only displays results returning handshake
+                    regex_notify = '[1-9][0-9]* returned notify'         #displays all results with returned responses (even notify)
+                    regex_handshake = '[1-9][0-9]* returned handshake'      #only displays results returning handshake
+                    regex_cisco = 'Cisco'
+                    regex_ciscodpd = 'Dead Peer'
                     
-                    matchObj = re.search(regex_str, out)                    
+                    if args.allresponses:
+                        matchObj = re.search(regex_notify, out)
+                    else:
+                        matchObj = re.search(regex_handshake, out)          
+                                                           
                     if matchObj:
                         print ikescan_command + "\n" + out
                         
+                        #check to see if it is a cisco response that does not include dead peer detection
+                        #payload - if this is the case, we may have specified a nonexistent ID
+                        if re.search(regex_cisco, out) and not re.search(regex_ciscodpd, out):
+                            print "WARNING - cisco response detected without Dead Peer Detection in payload."
+                            print "Depending upon device version and patch status this could mean a bad group ID."
+                            print "If this is true, psk-crack attempts will be unsuccessful!"
+                        
+                        #if not an extended scan and we got a handshake, exit program
+                        if args.extended == False and re.search(regex_handshake, out):
+                            sys.exit()
+                    
 if __name__ == "__main__":
     main(sys.argv[1:])
 
