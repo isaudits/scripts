@@ -17,7 +17,7 @@ def main(argv):
     parser = argparse.ArgumentParser(description='Convert NTLM hash file among LC / Cain, PWDump, and msf formats.')
     parser.add_argument("infile", action="store", help="Input file")
     parser.add_argument("outfile", action="store", help="Output file to be generated")
-    parser.add_argument("outformat", help="Output file format (pwdump, lc)", nargs='?', default="pwdump")
+    parser.add_argument("outformat", help="Output file format (pwdump, lc, msf)", nargs='?', default="pwdump")
     
     args = parser.parse_args()  
     
