@@ -13,7 +13,7 @@ TJS Deemer Dana - <http://www.tjsdd.com>
 
 -------------------------------------------------------------------------------
 
-Many of these scripts were authored by others and may or may not contain 
+A handful of these scripts were authored by others and may or may not contain 
 modifications. 
 
 Copyright info and credits have been maintained where applicable.
