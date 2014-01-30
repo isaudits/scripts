@@ -10,6 +10,8 @@ Invoke nmap scan and parse results to find local admin rights
 nmap -p 445 --open --script=smb-enum-shares.nse --script-args smbuser=<USERNAME>
 ,smbpass=<USERPASS>,smbdomain=<DOMAIN>
 
+NOTE - ENCLOSE PASSWORD IN QUOTES IF CONTAINS SPECIAL CHARACTERS LIKE $
+
 Based on parseadmin.rb script by zeknox
 http://www.pentestgeek.com/2012/08/23/creds-or-hash-where-the-admin-at/
 
