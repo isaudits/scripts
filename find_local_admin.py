@@ -37,7 +37,6 @@ def parse_nmap(nmap_outfilename):
     for host in hosts:
         
         address = host.getElementsByTagName("address")[0].getAttribute("addr")
-        #hostname = host.getElementsByTagName("hostnames").getElementsByTagName("hostname")[0].getAttribute("name")
         hostnames = host.getElementsByTagName("hostnames")
         for hostname in hostnames:
             try:
@@ -52,8 +51,11 @@ def parse_nmap(nmap_outfilename):
         
         if string.find(script_results,"WRITE") != -1:        
             output_str = "[+] local admin on " + address
-            if name[0] != "":
-                output_str += "  (" + name + ")"
+            try:
+                if name[0] != "":
+                    output_str += "  (" + name + ")"
+            except:
+                pass
             
             print output_str
 
