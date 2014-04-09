@@ -49,11 +49,11 @@ def main(argv):
     subprocess.Popen("john --single --format="+hashtype+" " + inputfile, shell=True).wait()
     subprocess.Popen("john --wordlist="+wordlistdir+"wordlists/numbers.txt --rules --format="+hashtype+" " + inputfile, shell=True).wait()
     subprocess.Popen("john --wordlist="+wordlistdir+"wordlists/names.txt --rules --format="+hashtype+" " + inputfile, shell=True).wait()
-    subprocess.Popen("john --wordlist="+wordlistdir+"wordlists/oxford_english_dictionary.txt --rules --format="+hashtype+" " + inputfile, shell=True).wait()
-    subprocess.Popen("john --wordlist="+wordlistdir+"combined_unix.txt --rules --format="+hashtype+" " + inputfile, shell=True).wait()
+    subprocess.Popen("john --wordlist="+wordlistdir+"combined_wordlists_unix.txt --rules --format="+hashtype+" " + inputfile, shell=True).wait()
+    subprocess.Popen("john --wordlist="+wordlistdir+"combined_passlists_.txt --rules --format="+hashtype+" " + inputfile, shell=True).wait()
     
     subprocess.Popen("john --wordlist="+wordlistdir+"wordlists/names.txt --rules=single --format="+hashtype+" " + inputfile, shell=True).wait()
-    subprocess.Popen("john --wordlist="+wordlistdir+"wordlists/oxford_english_dictionary.txt --rules=single --format="+hashtype+" " + inputfile, shell=True).wait()
+    subprocess.Popen("john --wordlist="+wordlistdir+"combined_wordlists.txt --rules=single --format="+hashtype+" " + inputfile, shell=True).wait()
     
     subprocess.Popen("john --show --format="+hashtype+" " + inputfile + "| cut -d: -f1,2", shell=True).wait()
 
