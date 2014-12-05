@@ -10,7 +10,6 @@ Convert password hash files among Cain/L0phtcrack, PwDump, and Metasploit format
 
 import sys
 import argparse
-    
 
 def main(argv):
     

@@ -7,9 +7,9 @@ Miscellaneous scripts for penetration testing
 
 Matthew C. Jones, CPA, CISA, OSCP
 
-IS Audits and Consulting, LLC - <http://www.isaudits.net/>
+IS Audits and Consulting, LLC - <http://www.isaudits.com/>
 
-TJS Deemer Dana - <http://www.tjsdd.com>
+TJS Deemer Dana - <http://www.tjsdd.com/>
 
 -------------------------------------------------------------------------------
 
