@@ -2,3 +2,4 @@
 .pydevproject
 /.externalToolBuilders
 *.tmp
+.DS_Store
