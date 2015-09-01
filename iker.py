@@ -1,3 +1,13 @@
+#!/usr/bin/python
+'''
+iker.py script courtesy of Portcullis Security
+
+https://labs.portcullis.co.uk/tools/iker/
+
+Modifications from original v1.1 script:
+	Added shebang for python binary above
+	
+'''
 ###############################################################################
 ### iker.py
 ### 
