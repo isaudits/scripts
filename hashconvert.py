@@ -31,7 +31,7 @@ def main(argv):
         remove_machines = False
     
     #pwdump format - <user>:<id>:<lanman pw>:<NT pw>:comment:homedir:
-    # username:1001:AAD3B435B51404EEAAD3B435B51404EE:0A1E55D87719539687E73602FF486676:::
+    # username:1001:AAD3B435B51404EEAAD3B435B51404EE:0A1E55D87719539687E73602FF486676:<comments>:<homedir>:
     
     #metasploit format - <user>:<id>:<lanman pw>:<NT pw>    (same as pwdump but without last 3 columns)
     # username:1001:AAD3B435B51404EEAAD3B435B51404EE:0A1E55D87719539687E73602FF486676
