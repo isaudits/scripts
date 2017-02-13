@@ -28,6 +28,9 @@ echo "$line" > /tmp/newhash.txt
 hash="$line"
 username="`echo $line | cut -d : -f 1`"
 seedhash="`echo $line | cut -d : -f 4 | sed 's/\(.\{16\}\).*/\1/'`"
+echo $hash
+echo $username
+echo $seedhash
  
 #Get the seed (the first 16 digits of the hash)
 /usr/bin/rcracki_mt -h $seedhash $hlmtable > /tmp/seed.tmp
