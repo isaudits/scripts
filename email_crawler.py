@@ -76,7 +76,6 @@ def main():
     #------------------------------------------------------------------------------
     
     # Looks like a domain name was passed instead of URL; prepend http://
-    print site_url[0:4]
     if not site_url[0:4] == "http":
         site_url = "http://" + site_url
     
