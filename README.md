@@ -18,6 +18,15 @@ modifications.
 
 Copyright info and credits have been maintained where applicable.
 
+The following collections are included as subtrees:
+- https://github.com/averagesecurityguy/scripts
+- https://github.com/danielbohannon/Invoke-Obfuscation
+- https://github.com/artkond/Invoke-Vnc
+- https://github.com/putterpanda/mimikittenz
+- https://github.com/PowerShellMafia/PowerSploit
+- https://github.com/xorrior/RandomPS-Scripts
+- https://github.com/fireeye/SessionGopher
+
 -------------------------------------------------------------------------------
 
 When not otherwise specified, scripts are licensed under GPL:
