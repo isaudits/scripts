@@ -27,6 +27,7 @@ The following collections are included as subtrees:
 - https://github.com/xorrior/RandomPS-Scripts
 - https://github.com/fireeye/SessionGopher
 - https://github.com/l0ss/Grouper
+- https://github.com/A-mIn3/WINspect
 
 -------------------------------------------------------------------------------
 
