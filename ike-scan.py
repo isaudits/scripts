@@ -61,7 +61,7 @@ def main(argv):
             for auth in list_auth:
                 for dhgroup in list_dhgroup:
                     
-                    ikescan_command = "ike-scan %s --trans=%s,%s,%s,%s -M" % (target_ip, enc, hash, auth, dhgroup)
+                    ikescan_command = "/usr/bin/ike-scan %s --trans=%s,%s,%s,%s -M" % (target_ip, enc, hash, auth, dhgroup)
                     if args.showbackoff:
                         ikescan_command = ikescan_command + " --showbackoff"
                         
