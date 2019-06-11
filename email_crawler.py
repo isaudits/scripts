@@ -19,7 +19,7 @@ try:
     from scrapy.spiders import Rule, CrawlSpider
     from scrapy.crawler import CrawlerProcess
 except:
-    print "Scrapy dependency not met"
+    print("Scrapy dependency not met")
     exit()
 
 harvested_emails=[]
@@ -53,7 +53,7 @@ class EmailSpider(CrawlSpider):
         for item in zip(emails):
             email = str(item[0])
             if not email in harvested_emails:
-                print "found " + email + " at " + response.url
+                print("found " + email + " at " + response.url)
                 harvested_emails.append(email)
     
 def main():
@@ -88,16 +88,16 @@ def main():
         'DOWNLOAD_HANDLERS': {'s3': None,}      #this is to fix error with version of scrapy in Kali repo - https://stackoverflow.com/questions/31048130/scrapy-gives-urlerror-urlopen-error-timed-out
         })
     
-    print "Harvesting emails from " + site_url + "..."
+    print("Harvesting emails from " + site_url + "...")
     crawler_process.crawl(EmailSpider, start_urls=[site_url], allowed_domains=[site_domain])
     crawler_process.start()
     
     if harvested_emails:
-        print "\nFound " + str(len(harvested_emails)) + " email addresses on " + site_url + ":"
+        print("\nFound " + str(len(harvested_emails)) + " email addresses on " + site_url + ":")
         for email in harvested_emails:
-            print email
+            print(email)
     else:
-        print "\nNo email addresses found. Sorry!"
+        print("\nNo email addresses found. Sorry!")
     
 if __name__ == '__main__':
     main()
