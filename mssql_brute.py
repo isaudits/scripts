@@ -40,6 +40,12 @@ def main(argv):
     domain = args.domain
     target = args.target
     
+    # Regex to escape ANSI color codes in metasploit output
+    # See https://stackoverflow.com/questions/14693701/how-can-i-remove-the-ansi-escape-sequences-from-a-string-in-python
+    # Color codes only - r'\x1B\[[0-?]*[ -/]*[@-~]'
+    # All ANSI escape codes - r'(\x9B|\x1B\[)[0-?]*[ -/]*[@-~]'
+    ansi_escape = re.compile(r'\x1B\[[0-?]*[ -/]*[@-~]')
+    
     command = "msfconsole -q -n -x '" \
               "use auxiliary/scanner/mssql/mssql_ping;" \
               "set RHOSTS " + target + ";" \
@@ -51,6 +57,7 @@ def main(argv):
     process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
     output, error = process.communicate()
     
+    output = ansi_escape.sub('',output)
     print(output)
     
     # returns a list of tuples with ip & port, e.g.
@@ -90,6 +97,7 @@ def main(argv):
         process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
         output, error = process.communicate()
         
+        output = ansi_escape.sub('',output)
         print(output)
     
 if __name__ == "__main__":
