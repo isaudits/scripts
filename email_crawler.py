@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/python3
 '''
 @author: Matthew C. Jones, CPA, CISA, OSCP
 IS Audits & Consulting, LLC
@@ -6,12 +6,14 @@ TJS Deemer Dana LLP
 
 Email crawler / scraping script
 
+Updated to Python 3 due to Scrapy dependency - will not run correctly on Python 2.7 anymore!
+
 See README.md for licensing information and credits
 
 '''
 
 import argparse
-from urlparse import urlparse
+from urllib.parse import urlparse
 
 try:
     from scrapy.selector import Selector
