@@ -28,7 +28,7 @@ def main(argv):
     parser.add_argument("--password", "-p", default="", action="store", help='password')
     parser.add_argument("--userfile", "-U", default="", action="store", help='user file')
     parser.add_argument("--passfile", "-P", default="", action="store", help='password file')
-    parser.add_argument("--domain", "-d", default="WORKGROUP", action="store", help='domain / workgroup to use for windows authentication')
+    parser.add_argument("--domain", "-d", default="", action="store", help='domain / workgroup to use for windows authentication')
     parser.add_argument("target", action="store", help="target")
     args = parser.parse_args()
     
@@ -70,8 +70,11 @@ def main(argv):
         command = "msfconsole -q -n -x '" \
                   "use auxiliary/scanner/mssql/mssql_login;" \
                   "set RHOSTS " + host + ";" \
-                  "set RPORT " + port + ";" \
-                  "set DOMAIN " + domain + ";"
+                  "set RPORT " + port + ";"
+        if domain:
+            command = command + \
+                    "set DOMAIN " + domain + ";" \
+                    "set USE_WINDOWS_AUTHENT true;"
         
         # either going to use a userpass file or a combination of username/userfile/password/passfile
         if wordlist:
