@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/env python2
 '''
 iker.py script courtesy of Portcullis Security
 
