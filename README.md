@@ -30,6 +30,7 @@ The following collections are included as subtrees:
 - https://github.com/A-mIn3/WINspect
 - https://github.com/phillips321/adaudit
 - https://github.com/alanrenouf/Windows-Workstation-and-Server-Audit
+- https://github.com/TheSecEng/NessusParser-Excel
 
 -------------------------------------------------------------------------------
 
