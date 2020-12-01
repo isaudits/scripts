@@ -1,4 +1,4 @@
-#!/usr/bin/perl
+#!/opt/local/bin/perl
 
 use strict;
 use XML::TreePP;
@@ -8,8 +8,10 @@ use Excel::Writer::XLSX;
 use Data::Table;
 use Excel::Writer::XLSX::Chart;
 use Getopt::Std;
+#use Devel::Size qw(size total_size);   #############  New module
 
-## Copyright (C) 2013  Cody Dumont
+print "";
+## Copyright (C) 2016  Cody Dumont
 ##
 ## This program is free software; you can redistribute it and/or
 ## modify it under the terms of the GNU General Public License
@@ -31,7 +33,7 @@ use Getopt::Std;
 ## summary graphs, and a home page with summary data.  For more information
 ## and questions please contact Cody Dumont cody@melcara.com
 ##
-## Version 0.21
+## Version 0.24
 
 our %recast_plugin;
 our (@installedSoftware,@portScanner,@vuln_entries,@host_scan_data,@WinWirelessSSID,@cpe_data,@PCIDSS,@ADUsers,@ScanInfo,@MS_Process_Info);
@@ -66,19 +68,23 @@ our %cvss_score;
 our $port_scan_plugin = '(10335)|(34277)|(11219)|(14272)|(34220)';
 our $installed_software_plugin = '(20811)|(58452)|(22869)';
 our %total_discovered;
+our %vuln_totals;
+our @host_data;
+my @PolicyCompliance;
+my @policy_data;
 
 my $new_stuff = '
-These are the new features with version 21
+These are the new features with version 24
 
-1.  Created new tab for Plugin 71246 LOCAL GROUP Membership
-2.  Fixed a few misc spelling issues.
-3.  Added the date fields to each of the severity tabs.
-4.  Added a 2 new tabs for the plugin 70329 - MS Process info
-5.  Added Vulnerability to IP Summary Tab, lists all the IP for each vuln and the severity.
-6.  Added Solution and Synopsis to severity tabs.
-7.  Fixed issue with User account formatting changes.
-8.  Updated Audit file processing, also created code to dynamically add new audit types.
-9.  Fixed a bug in the host configuration table for password policies
+1.  Fix regex \Q\E line est 1477,1484 v22
+2.  Removing plugin 33929 from High Vulns calculation
+3.  Removed Compliance from being part of High Vuln Calculation
+4.  Version 23 Skipped
+5.  reordered vuln data processing to not use as much memory.
+6.  
+7. 
+8.  
+9.  
 ';
 
 print $new_stuff;
@@ -87,13 +93,13 @@ sleep 2;
 #####################  get arguments from the command
 my $help_msg = '
 NAME
-    parse_nessus_xml.v21.pl -- parse nessus v2 XML files into an XLSX file
+    parse_nessus_xml.v24.pl -- parse nessus v2 XML files into an XLSX file
     
 SYNOPSIS
-    perl parse_nessus_xml.v21.pl [-vVhH] [-f file] [-d directory] [-r recast_file optional ]
+    perl parse_nessus_xml.v24.pl [-vVhH] [-f file] [-d directory] [-r recast_file optional ]
 
 DESCRIPTION
-    Nessus Parser v0.21 - This is a program to parse a series of Nessus XMLv2
+    Nessus Parser v0.24 - This is a program to parse a series of Nessus XMLv2
     files into a XLSX file.  The data from the XML file is placed into a series
     of tabs to for easier review and reporting.  New features with this edition
     are better reporting of policy plugin families, user account reporting,
@@ -129,7 +135,7 @@ DESCRIPTION
 
     -r      The Recast option is a feature request from user KurtW.  Kurt wanted
             to be able to change the reported value of Nessus Plugin ID.  While
-            this is not recommended in many cases, in some instanses the change
+            this is not recommended in many cases, in some instances the change
             may provide the Nessus user with more accurate report.
             To use this feature create a CSV file with three fields.
             
@@ -161,31 +167,31 @@ DESCRIPTION
     
     EXAMPLES
         The command:
-                perl /path/to/script/parse_nessus_xml.v21.pl -v
+                perl /path/to/script/parse_nessus_xml.v24.pl -v
             
             This command will print this help message.
         
         The command:
-                perl /path/to/script/parse_nessus_xml.v21.pl -h
+                perl /path/to/script/parse_nessus_xml.v24.pl -h
             
             This command will print this help message.
         
         The command:
-                perl /path/to/script/parse_nessus_xml.v21.pl -d /foo/bar
+                perl /path/to/script/parse_nessus_xml.v24.pl -d /foo/bar
             
             This command will seearch the direcoty specified by the "-d" option
             for Nessus XML v2 files and parse the files found.
         
         The command:
-                perl /path/to/script/parse_nessus_xml.v21.pl -f /foo/bar/scan1.nessus
+                perl /path/to/script/parse_nessus_xml.v24.pl -f /foo/bar/scan1.nessus
                 -----  or -----
-                perl /path/to/script/parse_nessus_xml.v21.pl -f /foo/bar/scan1.nessus.xml
+                perl /path/to/script/parse_nessus_xml.v24.pl -f /foo/bar/scan1.nessus.xml
             
             This command will seearch the direcoty specified by the "-d" option
             for Nessus XML v2 files and parse the files found.
             
         The command:
-                perl /path/to/script/parse_nessus_xml.v21.pl -f /foo/bar/scan1.nessus -r /path/to/script/recast.txt
+                perl /path/to/script/parse_nessus_xml.v24.pl -f /foo/bar/scan1.nessus -r /path/to/script/recast.txt
                 
 ';
 
@@ -235,9 +241,12 @@ elsif($opt{"f"}){
     if($tmp_data =~ /(NessusClientData_v2)/m){
         print "File $target_file is a Valid Nessus Ver2 format and will be parsed.\n\n";
         my @dirs = split /\\|\//,$target_file;
-        push @xml_files,pop @dirs;
+        pop @dirs;
         if(!@dirs){push @dirs, "."}
         $dir = join "/", @dirs;
+        push @xml_files, $target_file;
+        
+        print "";
     }
     else{print "This file \"$target_file\" is not using the Nessus version 2 format, and will NOT be parsed!!!\n\n";exit;}
     $/ = $eol_marker;
@@ -248,7 +257,7 @@ else{
 
 if($opt{"r"}){
     my $recast_file = $opt{"r"};
-    print "The recast option is selected, the recast definition file is \"$recast_file\"\.\nPlease note all the following Plugin ID's will have thier sevarity changed accordingly.\n\n";
+    print "The recast option is selected, the recast definition file is \"$recast_file\"\.\nPlease note all the following Plugin ID's will have thier severity changed accordingly.\n\n";
     open FILE, $recast_file or die "Can't open the $recast_file file\n";
     my @tmp_data = <FILE>;
     close FILE;
@@ -277,7 +286,7 @@ my $report_file = sprintf("%4d%02d%02d%02d%02d%02d",($year + 1900),($mon+1),$mda
 
 print "
 ################################################################################
-                            NESSUS PARSER V0.21
+                            NESSUS PARSER V0.24
 ################################################################################
 ";
 
@@ -366,12 +375,12 @@ sub vulnerability_plugin_worksheet {
 
 sub compliance_worksheet {
     my $complaince_type = $_[0];
-    
+
     my $complaince_name = $complaince_type;
     $complaince_name =~ s/Compliance Checks//;
     $complaince_name =~ s/\s//g;
     $complaince_name =~ s/[[:punct:]]//g;
-    
+
     my $complaince_name1 = substr ($complaince_name, 0, 23);
     $complaince_name = "$complaince_name1 Policy";
     my $Compliance_ctr = 2;
@@ -382,30 +391,38 @@ sub compliance_worksheet {
     $Compliance_worksheet->write(1, 1, 'IP Address',$center_border6_format);
     $Compliance_worksheet->write(1, 2, 'FQDN',$center_border6_format);
     $Compliance_worksheet->write(1, 3, 'PluginID',$center_border6_format);
-    $Compliance_worksheet->write(1, 4, 'protocol',$center_border6_format);
-    $Compliance_worksheet->write(1, 5, 'severity',$center_border6_format);
-    $Compliance_worksheet->write(1, 6, 'pluginFamily',$center_border6_format);
-    $Compliance_worksheet->write(1, 7, 'Audit File',$center_border6_format);
-    $Compliance_worksheet->write(1, 8, 'Policy Type',$center_border6_format);
-    $Compliance_worksheet->write(1, 9, 'Policy Setting',$center_border6_format);
-    $Compliance_worksheet->write(1, 10, 'Result',$center_border6_format);
-    $Compliance_worksheet->write(1, 11, 'System Value',$center_border6_format);
-    $Compliance_worksheet->write(1, 12, 'Compliance Requirement',$center_border6_format);
-    $Compliance_worksheet->write(1, 13, 'Description of Requirement',$center_border6_format);
+    #$Compliance_worksheet->write(1, 4, 'protocol',$center_border6_format);
+    $Compliance_worksheet->write(1, 4, 'Severity',$center_border6_format);
+    #$Compliance_worksheet->write(1, 5, 'pluginFamily',$center_border6_format);
+    $Compliance_worksheet->write(1, 5, 'Audit File',$center_border6_format);
+    #$Compliance_worksheet->write(1, 6, 'Policy Type',$center_border6_format);
+    $Compliance_worksheet->write(1, 6, 'Policy Setting',$center_border6_format);
+    $Compliance_worksheet->write(1, 7, 'Result',$center_border6_format);
+    $Compliance_worksheet->write(1, 8, 'System Value/Error Messages',$center_border6_format);
+    $Compliance_worksheet->write(1, 9, 'Compliance Requirement',$center_border6_format);
+    $Compliance_worksheet->write(1, 10, 'Description of Requirement',$center_border6_format);
+
+    # JB Init Changes
+    # add column for solution
+    $Compliance_worksheet->write(1, 11, 'Solution',$center_border6_format);
+    $Compliance_worksheet->write(1, 12, 'Authority Document',$center_border6_format);
+    $Compliance_worksheet->write(1, 13, 'Cross References',$center_border6_format);
+    ## End Init Changes
+
     $Compliance_worksheet->freeze_panes('C3');
     $Compliance_worksheet->autofilter('A2:N2');
     $Compliance_worksheet->set_column('A:N', 20);
-    
+
     foreach (@{$complaince{$complaince_type}}){
         my @tmp;
         my $remote_value;
         my @compliance_check_name = split / - /,$_->{vuln}->{'cm:compliance-check-name'};
-        foreach my $k (keys %{$_->{vuln}}){$_->{vuln}->{"$k"} =~ s/\n/\|/g;}
-        if ($compliance_check_name[1] eq "") {
-            my @tmp = split /: /,$_->{vuln}->{'cm:compliance-check-name'};
-            $compliance_check_name[0] = "$tmp[0] $tmp[1]";
-            $compliance_check_name[1] = "$tmp[2]";
-        }
+        #foreach my $k (keys %{$_->{vuln}}){$_->{vuln}->{"$k"} =~ s/\n/\|/g;}
+        #if ($compliance_check_name[1] eq "") {
+        #    my @tmp = split /: /,$_->{vuln}->{'cm:compliance-check-name'};
+        #    $compliance_check_name[0] = "$tmp[0] $tmp[1]";
+        #    $compliance_check_name[1] = "$tmp[2]";
+        #}
         my $compliance_value;
         if ($_->{vuln}->{description} =~ /(?<=Remote value:).+?(?=^Policy value:)/ism){$remote_value = substr($_->{vuln}->{description},$-[0],$+[0]-$-[0]);}
         if ($_->{vuln}->{description} =~ /(?<=Policy value:).+?\Z/ism){$compliance_value = substr($_->{vuln}->{description},$-[0],$+[0]-$-[0]);}
@@ -421,17 +438,27 @@ sub compliance_worksheet {
         $Compliance_worksheet->write($Compliance_ctr, 1, $_->{'name'},$cell_format);
         $Compliance_worksheet->write($Compliance_ctr, 2, $_->{'fqdn'},$cell_format);
         $Compliance_worksheet->write($Compliance_ctr, 3, $_->{vuln}->{-pluginID},$cell_format);#PluginID
-        $Compliance_worksheet->write($Compliance_ctr, 4, $_->{vuln}->{-protocol},$cell_format);#protocol
-        $Compliance_worksheet->write($Compliance_ctr, 5, $_->{vuln}->{-severity},$cell_format);#severity
-        $Compliance_worksheet->write($Compliance_ctr, 6, $_->{vuln}->{-pluginFamily},$cell_format);#pluginFamily
-        $Compliance_worksheet->write($Compliance_ctr, 7, $_->{vuln}->{"cm:compliance-audit-file"},$cell_format);
-        $Compliance_worksheet->write($Compliance_ctr, 8, $compliance_check_name[0],$cell_format); #'Policy Type'
-        $Compliance_worksheet->write($Compliance_ctr, 9, $compliance_check_name[1],$wrap_text_format);#Policy Setting
-        $Compliance_worksheet->write($Compliance_ctr, 10, $_->{vuln}->{'cm:compliance-result'},$wrap_text_format);#Result
-        if ($_->{vuln}->{'cm:compliance-actual-value'} =~ /\=/) {$Compliance_worksheet->write($Compliance_ctr, 11, "\'$_->{vuln}->{'cm:compliance-actual-value'}",$wrap_text_format);} #System Value
-        else{$Compliance_worksheet->write($Compliance_ctr, 11, $_->{vuln}->{'cm:compliance-actual-value'},$wrap_text_format);}#System Value
-        $Compliance_worksheet->write($Compliance_ctr, 12, $compliance_value,$wrap_text_format);#Compliance Requirement
-        $Compliance_worksheet->write($Compliance_ctr, 13, $description,$wrap_text_format);#description of test
+        #$Compliance_worksheet->write($Compliance_ctr, 4, $_->{vuln}->{-protocol},$cell_format);#protocol
+        $Compliance_worksheet->write($Compliance_ctr, 4, $_->{vuln}->{-severity},$cell_format);#severity
+        #$Compliance_worksheet->write($Compliance_ctr, 5, $_->{vuln}->{-pluginFamily},$cell_format);#pluginFamily
+        $Compliance_worksheet->write($Compliance_ctr, 5, $_->{vuln}->{"cm:compliance-audit-file"},$cell_format);
+        #$Compliance_worksheet->write($Compliance_ctr, 6, $compliance_check_name[0],$cell_format); #'Policy Type'
+        $Compliance_worksheet->write($Compliance_ctr, 6, $_->{vuln}->{"cm:compliance-check-name"},$cell_format);#Check Name
+        $Compliance_worksheet->write($Compliance_ctr, 7, $_->{vuln}->{'cm:compliance-result'},$wrap_text_format);#Result
+        if ($_->{vuln}->{'cm:compliance-actual-value'} =~ /\=/) {$Compliance_worksheet->write($Compliance_ctr, 8, "\'$_->{vuln}->{'cm:compliance-actual-value'}",$wrap_text_format);} #System Value
+        else{$Compliance_worksheet->write($Compliance_ctr, 8, $_->{vuln}->{'cm:compliance-actual-value'},$wrap_text_format);}#System Value
+        $Compliance_worksheet->write($Compliance_ctr, 9, $_->{vuln}->{"cm:compliance-policy-value"},$cell_format);#Compliance Requirement
+        $Compliance_worksheet->write($Compliance_ctr, 10, $_->{vuln}->{"cm:compliance-info"},$cell_format);#description of test
+
+        ## JB Init Changes
+        # Add write for soluton data
+        $Compliance_worksheet->write($Compliance_ctr, 11, $_->{vuln}->{'cm:compliance-solution'},$wrap_text_format);#Solution
+        $Compliance_worksheet->write($Compliance_ctr, 12, $_->{vuln}->{'cm:compliance-see-also'},$wrap_text_format);#See Also
+        my $references = $_->{vuln}->{'cm:compliance-reference'};
+        $references =~ s/,/, /g;
+        $Compliance_worksheet->write($Compliance_ctr, 13, $references,$wrap_text_format);#XRef
+        ## End Init Changes
+
         ++$Compliance_ctr;
         $_->{vuln}->{'oringnal description'} = $_->{vuln}->{description};
         $_->{vuln}->{'Result'} = $_->{vuln}->{'cm:compliance-result'};
@@ -601,7 +628,7 @@ sub check_if_vuln_present{
         my @found_plugin = grep /$vuln->{-pluginID}/, @{$vulnerability_data{lowvuln}};
         if ($plugin_test == 0){
             ++$plugin_cnt;
-            $plugin = "$plugin\,$severity\,$plugin_cnt\,$pluginName\,$file\,$vuln->{-pluginFamily},$bid,$cve,$xref,$vuln->{solution},$vuln->{description},$vuln->{cvss_base_score},$vuln->{cvss_vector},$vuln->{cvss_temporal_score},$vuln->{solution},$vuln->{synopsis},$vuln->{plugin_publication_date},$vuln->{plugin_modification_date},$vuln->{patch_publication_date},$vuln->{vuln_publication_date}";
+            $plugin = "$plugin\,$severity\,$plugin_cnt\,$pluginName\,$file\,$vuln->{-pluginFamily},$bid,$cve,$xref,$vuln->{solution},$vuln->{description},$vuln->{exploitability_ease},$vuln->{exploit_available},$vuln->{exploit_framework_canvas},$vuln->{exploit_framework_metasploit},$vuln->{exploit_framework_core},$vuln->{metasploit_name},$vuln->{canvas_package},$vuln->{cvss_base_score},$vuln->{cvss_vector},$vuln->{cvss_temporal_score},$vuln->{solution},$vuln->{synopsis},$vuln->{plugin_publication_date},$vuln->{plugin_modification_date},$vuln->{patch_publication_date},$vuln->{vuln_publication_date}";
             push @{$vulnerability_data{lowvuln}}, $plugin
         }
         else{
@@ -613,7 +640,7 @@ sub check_if_vuln_present{
             }
             # end foreach
             if ($found == 0){
-                $plugin = "$plugin\,$severity\,1\,$pluginName\,$file\,$vuln->{-pluginFamily},$bid,$cve,$xref,$vuln->{solution},$vuln->{description},$vuln->{cvss_base_score},$vuln->{cvss_vector},$vuln->{cvss_temporal_score},$vuln->{solution},$vuln->{synopsis},$vuln->{plugin_publication_date},$vuln->{plugin_modification_date},$vuln->{patch_publication_date},$vuln->{vuln_publication_date}";
+               $plugin = "$plugin\,$severity\,1\,$pluginName\,$file\,$vuln->{-pluginFamily},$bid,$cve,$xref,$vuln->{solution},$vuln->{description},$vuln->{exploitability_ease},$vuln->{exploit_available},$vuln->{exploit_framework_canvas},$vuln->{exploit_framework_metasploit},$vuln->{exploit_framework_core},$vuln->{metasploit_name},$vuln->{canvas_package},$vuln->{cvss_base_score},$vuln->{cvss_vector},$vuln->{cvss_temporal_score},$vuln->{solution},$vuln->{synopsis},$vuln->{plugin_publication_date},$vuln->{plugin_modification_date},$vuln->{patch_publication_date},$vuln->{vuln_publication_date}";
                 push @{$vulnerability_data{lowvuln}}, $plugin;
             }
             # end if
@@ -710,7 +737,12 @@ sub store_vuln{
     $hash{'netbios_name'} = $netbios_name;
     $hash{'operating_system'} = $operating_system;
     print "Storing Vulnerability Data for $name\n";
+    
     foreach my $vuln (@vuln_array){
+        if ($vuln->{-pluginID} == 33929){print "Removing plugin 33929 from High Vulns calculation\n"}
+        elsif ($vuln->{"cm:compliance-result"}) {"removing from the high vulns calculator\n"}
+        else {$vuln_totals{$vuln->{-severity}}->{$vuln->{-pluginID}}++;}
+        
         if ($vuln->{exploitability_ease} eq ""){$vuln->{exploitability_ease} = "N/A"}
         if ($vuln->{exploit_available} eq ""){$vuln->{exploit_available} = "N/A"}
         if ($vuln->{exploit_framework_canvas} eq ""){$vuln->{exploit_framework_canvas} = "N/A"}
@@ -782,6 +814,10 @@ sub store_vuln{
         # end of if ($vuln->{plugin_output})
         
         if($vuln->{-pluginFamily} ne "Policy Compliance"){
+            if($vuln->{'-pluginID'} eq '33929'){
+                print "";
+            }
+            
             my $r = "$file,$name,$host_fqdn,$vuln->{'-pluginID'},$vuln->{'-protocol'},$vuln->{'-port'},$vuln->{'-severity'},$vuln->{'-pluginFamily'},$plugin_name,$vuln->{exploitability_ease},$vuln->{exploit_available},$vuln->{exploit_framework_canvas},$vuln->{exploit_framework_metasploit},$vuln->{exploit_framework_core},$vuln->{metasploit_name},$vuln->{canvas_package},$vuln->{cvss_base_score},$vuln->{cvss_vector},$vuln->{cvss_temporal_score},$vuln->{plugin_output}";
             push @host_scan_data,$r;
         }
@@ -791,11 +827,777 @@ sub store_vuln{
 }
 # end of subrooutine
 
-#print "\n\n\n testing compliance I am exiting";exit;
+sub normalizeHostData {
+    my @report_data = @{$_[0]};
+    
+    foreach my $host (@report_data){
+        my @HostReport;
+        my $is_domain_controller = 0;
+        my $temp_domain_list;
+        $host->{"DomainController"} = "N";
+        ####  NEW ARRAYS
+        my @aix_local_security_checks;
+        my @amazon_linux_local_security_checks;
+        my @backdoors;
+        my @centos_local_security_checks;
+        my @cgi_abuses;
+        my @cgi_abuses_xss;
+        my @cisco;
+        my @databases;
+        my @debian_local_security_checks;
+        my @default_unix_accounts;
+        my @denial_of_service;
+        my @dns;
+        my @F5_Networks_Local_Security_Checks;
+        my @fedora_local_security_checks;
+        my @finger_abuses;
+        my @firewalls;
+        my @freebsd_local_security_checks;
+        my @ftp;
+        my @gain_a_shell_remotely;
+        my @general;
+        my @gentoo_local_security_checks;
+        my @hp_ux_local_security_checks;
+        my @Huawei_Local_Security_Checks;
+        my @junos_local_security_checks;
+        my @macos_x_local_security_checks;
+        my @mandriva_local_security_checks;
+        my @misc;
+        my @mobile_devices;
+        my @netware;
+        my @oracle_linux_local_security_checks;
+        my @OracleVM_Local_Security_Checks;
+        my @peer_to_peer_file_sharing;
+        my @Palo_Alto_Local_Security_Checks;
+        my @policy_compliance;
+        my @port_scanners;
+        my @red_hat_local_security_checks;
+        my @rpc;
+        my @scada;
+        my @scientific_linux_local_security_checks;
+        my @service_detection;
+        my @settings;
+        my @slackware_local_security_checks;
+        my @smtp_problems;
+        my @snmp;
+        my @solaris_local_security_checks;
+        my @suse_local_security_checks;
+        my @ubuntu_local_security_checks;
+        my @vmware_esx_local_security_checks;
+        my @web_servers;
+        my @windows;
+        my @windows_microsoft_bulletins;
+        my @windows_user_management;
+        my @port_scan;
+        my @WindowsUserManagement;
+        my @IncidentResponse;
+        ####  END OF NEW ARRAYS
+        
+        if(ref ($host->{host_report}) eq "ARRAY"){@HostReport = @{$host->{host_report}};}
+        elsif(ref ($host->{host_report}) eq "HASH"){push @HostReport,$host->{host_report};}
+        
+        foreach my $h_report (@HostReport){
+            ###  Find the Domain Controller
+            my $is_domain_controller = 0;
+            #print "$h_report->{'-pluginID'} \n";
+            
+            # store data in the %ip_vuln_data hash
+            $ip_vuln_data{$host->{file}}->{$h_report->{-severity}}->{$h_report->{-pluginID}}->{pluginName} = $h_report->{-pluginName};
+            if ($host->{'host-ip'} eq "") {$ip_vuln_data{$host->{file}}->{$h_report->{-severity}}->{$h_report->{-pluginID}}->{ip}->{$host->{'name'}}++;}
+            else{$ip_vuln_data{$host->{file}}->{$h_report->{-severity}}->{$h_report->{-pluginID}}->{ip}->{$host->{'host-ip'}}++;}
+            
+            # 70329 - process info
+            if ($h_report->{-pluginID} == 70329){
+                my %process_info = (
+                    'fqdn'         => $host->{"host-fqdn"},
+                    'host-ip'      => $host->{"host-ip"},
+                    'file'         => $host->{file},
+                    'name'         => $host->{name},
+                    'netbios-name' => $host->{"netbios-name"},
+                );
+                my $process_info = $h_report->{plugin_output};
+                $process_info =~ s/^Process Overview : \n//;
+                $process_info =~ s/^SID: Process \(PID\)\n//;
+                $process_info =~ s/Process_Information.+process.$//;
+                $process_info =~ s/\n\n\n$//;
+                my @tmp_process = split /\n/,$process_info;
+                foreach my $tp (@tmp_process){
+                    my $tp1 = $tp;
+                    $tp1 =~ s/^\s\d\s:\s+(((\||)((\-\s)|))|)//;
+                    $tp1 =~ s/\s\(\d+\)//;
+                    $ms_process_cnt{$tp1}->{$host->{"host-ip"}}++;
+                }
+                # end of foreach my $tp (@tmp_process)
+                $process_info{processes} = \@tmp_process;
+                push @MS_Process_Info, \%process_info;
+            }
+            # end of 70329 - process info
+            
+            #Device Type
+            if ($h_report->{-pluginID} == 54615) {
+                my %device_hash = (
+                    'fqdn'         => $host->{"host-fqdn"},
+                    'host-ip'      => $host->{"host-ip"},
+                    'file'         => $host->{file},
+                    'name'         => $host->{name},
+                    'netbios-name' => $host->{"netbios-name"},
+                );
+                
+                my $deviceData = $h_report->{plugin_output};
+                $deviceData =~ s/\n/ /g;
+                if ($deviceData =~ /(?<=type : ).*(?=Confidence )/) {$device_hash{type} = substr($deviceData,$-[0],$+[0]-$-[0])}
+                if ($deviceData =~ /Confidence level : \d+/) {
+                    $device_hash{confidenceLevel} = substr($deviceData,$-[0],$+[0]-$-[0]);
+                    $device_hash{confidenceLevel} =~ s/Confidence level : //;
+                }
+                push @DeviceType, \%device_hash;
+            }
+            #End of Device Type
+            
+            # Enumerate Local Group Memberships
+            if ($h_report->{-pluginID} == 71246){
+                my %EnumLocalGrp = (
+                    'fqdn'         => $host->{"host-fqdn"},
+                    'host-ip'      => $host->{"host-ip"},
+                    'file'         => $host->{file},
+                    'name'         => $host->{name},
+                    'netbios-name' => $host->{"netbios-name"},
+                );
+                
+                my $EnumLocalGrp = $h_report->{plugin_output};
+                $EnumLocalGrp =~ s/\n/;/g;
+                my @tmp_grp = split ";;",$EnumLocalGrp;
+                foreach my $g (@tmp_grp){
+                    my $grp = {};
+                    my ($grp_attrib,$members) = split /\;Members/,$g;
+                    my @t2 = split /;/,$grp_attrib;
+                    foreach my $t3 (@t2){
+                        my @t3 = split /\s+:\s/,$t3;
+                        $grp->{$t3[0]} = $t3[1];
+                    }
+                    # end of foreach my $t3 (@t2){
+                    if ($members =~ /^\s+:\s$/) {
+                        my @t3;
+                        push @t3, 'none';
+                        $grp->{members} = \@t3;
+                    }
+                    else{
+                        my @t3 = split /;\s+Name\s+:\s+/,$members;
+                        if ($t3[0] =~ /\s+\:\s/) {shift @t3}
+                        foreach my $t4 (@t3){
+                            my $member = {};
+                            $t4 = ";  Name : $t4";
+                            my @t4 = split /;\s+/,$t4;
+                            if ($t4[0] eq '') {shift @t4}
+                            foreach my $t5 (@t4){
+                                my ($k,$v) = split /\s+:\s+/,$t5;
+                                $member->{$k} = $v;
+                            }
+                            # end of foreach my $t5 (@t4)
+                            push @{$grp->{members}},$member
+                        }
+                        # end of foreach my $t4 (@t3)
+                        print "";
+                    }
+                    # end of if $members
+                    print "";
+                    $g = $grp;
+                }
+                # end of foreach my $g (@tmp_grp) 
+                $EnumLocalGrp{groups} = \@tmp_grp;
+                push @EnumLocalGrp, \%EnumLocalGrp;
+            }
+            # end of if ($h_report->{-pluginID} == 71246)
+            
+            # CPE info
+            if ($h_report->{cpe}) {
+                my %cpe_hash = (
+                    'pluginID'     => $h_report->{'-pluginID'},
+                    'cpe'          => $h_report->{cpe},
+                    'fqdn'         => $host->{"host-fqdn"},
+                    'host-ip'      => $host->{"host-ip"},
+                    'file'         => $host->{file},
+                    'name'         => $host->{name},
+                    'netbios-name' => $host->{"netbios-name"},
+                    'pluginFamily' => $h_report->{-pluginFamily},
+                    'pluginName'   => $h_report->{-pluginName},
+                    'cpe-source'   => 'vuln'
+                );
+                push @cpe_data, \%cpe_hash;
+            }
+            # end of CPE info
+            
+            if($h_report->{'-pluginID'} == 45590){
+                my @cpe_tmp = split /\n/,$h_report->{plugin_output};
+                foreach my $cpe_tmp_e (@cpe_tmp){
+                    if ($cpe_tmp_e =~ /cpe\:\/(o|a|h)/) {
+                        $cpe_tmp_e =~ s/\s//g;
+                        my %cpe_hash = (
+                            'pluginID'     => $h_report->{'-pluginID'},
+                            'cpe'          => $cpe_tmp_e,
+                            'fqdn'         => $host->{"host-fqdn"},
+                            'host-ip'      => $host->{"host-ip"},
+                            'file'         => $host->{file},
+                            'name'         => $host->{name},
+                            'netbios-name' => $host->{"netbios-name"},
+                            'pluginFamily' => $h_report->{-pluginFamily},
+                            'pluginName'   => $h_report->{-pluginName},
+                            'cpe-source'   => 'cpe'
+                        );
+                        push @cpe_data, \%cpe_hash; 
+                    }
+                    # end of if ($cpe_tmp_e =~ /cpe\:\/(o|a)/)
+                }
+                #  foreach my $cpe_tmp_e (@cpe_tmp)
+            }
+            # if($h_report->{'-pluginID'} == 45590)
+            
+            # @ScanInfo
+            if($h_report->{'-pluginID'} == 19506){
+                my $scan_info = $h_report;
+                $scan_info->{"host-ip"} = $host->{"host-ip"};
+                $scan_info->{file} = $host->{file};
+                $scan_info->{name} = $host->{name};
+                $scan_info->{"operating-system"} = $host->{"operating-system"};
+                $scan_info->{"system-type"} = $host->{"system-type"};
+                $scan_info->{HOST_END} = $host->{HOST_END};
+                $scan_info->{HOST_START} = $host->{HOST_START};
+                push @ScanInfo, $scan_info;
+            }
+            # end of if($h_report->{'-pluginID'} == 19506)
+            
+            if($opt{r} ne "" && $recast_plugin{$h_report->{'-pluginID'}}->{old} eq $h_report->{-severity}){
+                $h_report->{-severity} = $recast_plugin{$h_report->{'-pluginID'}}->{new}
+            }
+            # end of if($opt{r} ne "" && $recast_plugin{$h_report->{'-pluginID'}}->{old} eq $h_report->{-severity})
+            
+            if($h_report->{'-pluginID'} =~ /11026/){
+                my %wap_host;
+                $wap_host{'host-fqdn'} = $host->{'host-fqdn'};
+                $wap_host{"host-ip"} = $host->{"host-ip"};
+                $wap_host{"mac-address"} = $host->{"mac-address"};
+                $wap_host{name} = $host->{name};
+                $wap_host{"operating-system"} = $host->{"operating-system"};
+                $wap_host{"system-type"} = $host->{"system-type"};
+                $wap_host{"plugin-output"} = $h_report->{plugin_output};
+                $wap_host{"plugin-output"} =~ s/\n/ /g;
+                push @WirelessAccessPointDetection,\%wap_host;
+            }
+            # end of if($h_report->{'-pluginID'} =~ /11026/)
+            
+            if($h_report->{'-pluginID'} =~ /25197/){
+                my %ssid_host;
+                $ssid_host{'host-fqdn'} = $host->{'host-fqdn'};
+                $ssid_host{"host-ip"} = $host->{"host-ip"};
+                $ssid_host{"mac-address"} = $host->{"mac-address"};
+                $ssid_host{name} = $host->{name};
+                $ssid_host{"operating-system"} = $host->{"operating-system"};
+                $ssid_host{"system-type"} = $host->{"system-type"};
+                my $regex_net_card = '(?<=Network card type : ).*($)';
+                my $regex_ssid = '(?<=Network SSID      : ).*($)';
+                if($h_report->{plugin_output} =~ /$regex_net_card/m){$ssid_host{"nic"} = substr($h_report->{plugin_output},$-[0],$+[0]-$-[0])}
+                if($h_report->{plugin_output} =~ /$regex_ssid/m){$ssid_host{"ssid"} = substr($h_report->{plugin_output},$-[0],$+[0]-$-[0])}
+                push @WinWirelessSSID, \%ssid_host;
+            }
+            # end of if($h_report->{'-pluginID'} =~ /25197/)
+            
+            if($h_report->{'-pluginID'} =~ /10413/  && $ADUsers[0] eq "" && $temp_domain_list eq ""){
+                $is_domain_controller = 1;
+                $host->{"DomainController"} = "Y";
+            }
+            elsif($h_report->{'-pluginID'} =~ /10413/  && $ADUsers[0] eq "" && $temp_domain_list ne ""){
+                store_ad_users($temp_domain_list);
+                $host->{"DomainController"} = "Y";
+            }
+            elsif($h_report->{'-pluginID'} =~ /10860/ && $ADUsers[0] eq "" && $is_domain_controller == 0){
+                $temp_domain_list = $h_report->{plugin_output};
+            }
+            elsif($h_report->{'-pluginID'} =~ /10860/ && $ADUsers[0] eq "" && $is_domain_controller == 1){
+                print "\n\n";print '$h_report->{\'-pluginID\'} =~ /10860/ && $ADUsers[0] eq "" && $is_domain_controller == 1'; 
+            }
+            elsif($h_report->{'-pluginID'} =~ /10860/ && $ADUsers[0] ne "" && $is_domain_controller == 0){
+                $temp_domain_list = $h_report->{plugin_output};
+            }
+            elsif($h_report->{'-pluginID'} =~ /10413/  && $ADUsers[0] ne "" && $temp_domain_list ne ""){
+                store_ad_users($temp_domain_list);
+                $host->{"DomainController"} = "Y";
+            }
+            # end of if..elsif
+            
+            if($h_report->{-pluginID} =~ /(10413)|(17651)|(10916)|(10915)|(10914)|(10913)|(10912)|(10911)|(10910)|(10908)|(10907)|(10906)|(10905)|(10904)|(10903)|(10902)|(10901)|(10900)|(10899)|(10898)|(10897)|(10896)|(10895)|(10894)|(10893)|(10892)|(10860)|(10399)/){
+                #10413 - Microsoft Windows SMB Registry : Remote PDC/BDC Detection
+                #17651 - Microsoft Windows SMB : Obtains the Password Policy
+                #10916 - Microsoft Windows - Local Users Information : Passwords never expire
+                #10915 - Microsoft Windows - Local Users Information : User has never logged on
+                #10914 - Microsoft Windows - Local Users Information : Never changed passwords
+                #10913 - Microsoft Windows - Local Users Information : Disabled accounts
+                #10912 - Microsoft Windows - Local Users Information : Can't change password
+                #10911 - Microsoft Windows - Local Users Information : Automatically disabled accounts
+                #10910 - Microsoft Windows Local User Information
+                #10908 - Microsoft Windows 'Domain Administrators' Group User List
+                #10907 - Microsoft Windows Guest Account Belongs to a Group
+                #10906 - Microsoft Windows 'Replicator' Group User List
+                #10905 - Microsoft Windows 'Print Operators' Group User List
+                #10904 - Microsoft Windows 'Backup Operators' Group User List
+                #10903 - Microsoft Windows 'Server Operators' Group User List
+                #10902 - Microsoft Windows 'Administrators' Group User List
+                #10901 - Microsoft Windows 'Account Operators' Group User List
+                #10900 - Microsoft Windows - Users Information : Passwords never expires
+                #10899 - Microsoft Windows - Users Information : User has never logged in
+                #10898 - Microsoft WIndows - Users Information : Never changed password
+                #10897 - Microsoft Windows - Users Information : disabled accounts
+                #10896 - Microsoft Windows - Users Information : Can't change password
+                #10895 - Microsoft Windows - Users Information : automatically disabled accounts
+                #10894 - Microsoft Windows User Groups List
+                #10893 - Microsoft Windows User Aliases List
+                #10892 - Microsoft Windows Domain User Information
+                #10860 - SMB Use Host SID to Enumerate Local Users
+                #10399 - SMB Use Domain SID to Enumerate Users
+                push @WindowsUserManagement,$h_report;
+            }
+            # end of if($h_report->{-pluginID} =~ /10413|17651|10916|10915|10914|10913|10912|10911|10910|10908|10907|10906|10905|10904|10903|10902|10901|10900|10899|10898|10897|10896|10895|10894|10893|10892|10860|10399/)
+            
+            if($h_report->{-pluginID} =~ /10150/){
+                if ($h_report->{plugin_output} =~ /(?<=Computer name\s ).+?(?= {2,}\= Workgroup)/){
+                    $host->{'AD Domain Name'} = substr($h_report->{plugin_output},$-[0],$+[0]-$-[0]);
+                }
+                # end of if
+            }
+            # end of ifif($h_report->{-pluginID} =~ /10150/)
+            if($h_report->{'-pluginFamily'} =~ /AIX Local Security Checks/){push @aix_local_security_checks, $h_report;}
+            elsif($h_report->{'-pluginFamily'} =~ /Amazon Linux Local Security Checks/){push @amazon_linux_local_security_checks, $h_report;}
+            elsif($h_report->{'-pluginFamily'} =~ /Backdoors/){push @backdoors, $h_report;}
+            elsif($h_report->{'-pluginFamily'} =~ /CentOS Local Security Checks/){push @centos_local_security_checks, $h_report;}
+            elsif($h_report->{'-pluginFamily'} =~ /CGI abuses/){push @cgi_abuses, $h_report;}
+            elsif($h_report->{'-pluginFamily'} =~ /CGI abuses : XSS/){push @cgi_abuses_xss, $h_report;}
+            elsif($h_report->{'-pluginFamily'} =~ /CISCO/){push @cisco, $h_report;}
+            elsif($h_report->{'-pluginFamily'} =~ /Databases/){push @databases, $h_report;}
+            elsif($h_report->{'-pluginFamily'} =~ /Debian Local Security Checks/){push @debian_local_security_checks, $h_report;}
+            elsif($h_report->{'-pluginFamily'} =~ /Default Unix Accounts/){push @default_unix_accounts, $h_report;}
+            elsif($h_report->{'-pluginFamily'} =~ /Denial of Service/){push @denial_of_service, $h_report;}
+            elsif($h_report->{'-pluginFamily'} =~ /DNS/){push @dns, $h_report;}
+            elsif($h_report->{'-pluginFamily'} =~ /F5 Networks Local Security Checks/){push @F5_Networks_Local_Security_Checks, $h_report;}
+            elsif($h_report->{'-pluginFamily'} =~ /Fedora Local Security Checks/){push @fedora_local_security_checks, $h_report;}
+            elsif($h_report->{'-pluginFamily'} =~ /Finger abuses/){push @finger_abuses, $h_report;}
+            elsif($h_report->{'-pluginFamily'} =~ /Firewalls/){push @firewalls, $h_report;}
+            elsif($h_report->{'-pluginFamily'} =~ /FreeBSD Local Security Checks/){push @freebsd_local_security_checks, $h_report;}
+            elsif($h_report->{'-pluginFamily'} =~ /FTP/){push @ftp, $h_report;}
+            elsif($h_report->{'-pluginFamily'} =~ /Gain a shell remotely/){push @gain_a_shell_remotely, $h_report;}
+            elsif($h_report->{'-pluginFamily'} =~ /General/){push @general, $h_report;}
+            elsif($h_report->{'-pluginFamily'} =~ /Gentoo Local Security Checks/){push @gentoo_local_security_checks, $h_report;}
+            elsif($h_report->{'-pluginFamily'} =~ /HP-UX Local Security Checks/){push @hp_ux_local_security_checks, $h_report;}
+            elsif($h_report->{'-pluginFamily'} =~ /Huawei Local Security Checks/){push @Huawei_Local_Security_Checks, $h_report;}
+            elsif($h_report->{'-pluginFamily'} =~ /Junos Local Security Checks/){push @junos_local_security_checks, $h_report;}
+            elsif($h_report->{'-pluginFamily'} =~ /MacOS X Local Security Checks/){push @macos_x_local_security_checks, $h_report;}
+            elsif($h_report->{'-pluginFamily'} =~ /Mandriva Local Security Checks/){push @mandriva_local_security_checks, $h_report;}
+            elsif($h_report->{'-pluginFamily'} =~ /Misc./){push @misc, $h_report;}
+            elsif($h_report->{'-pluginFamily'} =~ /Mobile Devices/){push @mobile_devices, $h_report;}
+            elsif($h_report->{'-pluginFamily'} =~ /Netware/){push @netware, $h_report;}
+            elsif($h_report->{'-pluginFamily'} =~ /OracleVM Local Security Checks/){push @OracleVM_Local_Security_Checks, $h_report;}
+            elsif($h_report->{'-pluginFamily'} =~ /Oracle Linux Local Security/){push @oracle_linux_local_security_checks, $h_report;}
+            elsif($h_report->{'-pluginFamily'} =~ /Palo Alto Local Security Checks/){push @Palo_Alto_Local_Security_Checks, $h_report;}
+            elsif($h_report->{'-pluginFamily'} =~ /Peer-To-Peer File Sharing/){push @peer_to_peer_file_sharing, $h_report;}
+            elsif($h_report->{'-pluginFamily'} =~ /Policy Compliance/){push @policy_compliance, $h_report;}
+            elsif($h_report->{'-pluginFamily'} =~ /Port scanners/){push @port_scanners, $h_report;}
+            elsif($h_report->{'-pluginFamily'} =~ /Red Hat Local Security Checks/){push @red_hat_local_security_checks, $h_report;}
+            elsif($h_report->{'-pluginFamily'} =~ /RPC/){push @rpc, $h_report;}
+            elsif($h_report->{'-pluginFamily'} =~ /SCADA/){push @scada, $h_report;}
+            elsif($h_report->{'-pluginFamily'} =~ /Scientific Linux Local Security Checks/){push @scientific_linux_local_security_checks, $h_report;}
+            elsif($h_report->{'-pluginFamily'} =~ /Service detection/){push @service_detection, $h_report;}
+            elsif($h_report->{'-pluginFamily'} =~ /Settings/){push @settings, $h_report;}
+            elsif($h_report->{'-pluginFamily'} =~ /Slackware Local Security Checks/){push @slackware_local_security_checks, $h_report;}
+            elsif($h_report->{'-pluginFamily'} =~ /SMTP problems/){push @smtp_problems, $h_report;}
+            elsif($h_report->{'-pluginFamily'} =~ /SNMP/){push @snmp, $h_report;}
+            elsif($h_report->{'-pluginFamily'} =~ /Solaris Local Security Checks/){push @solaris_local_security_checks, $h_report;}
+            elsif($h_report->{'-pluginFamily'} =~ /SuSE Local Security Checks/){push @suse_local_security_checks, $h_report;}
+            elsif($h_report->{'-pluginFamily'} =~ /Ubuntu Local Security Checks/){push @ubuntu_local_security_checks, $h_report;}
+            elsif($h_report->{'-pluginFamily'} =~ /VMware ESX Local Security Checks/){push @vmware_esx_local_security_checks, $h_report;}
+            elsif($h_report->{'-pluginFamily'} =~ /Web Servers/){push @web_servers, $h_report;}
+            elsif($h_report->{'-pluginFamily'} =~ /Windows : Microsoft Bulletins/){push @windows_microsoft_bulletins, $h_report;}
+            elsif($h_report->{'-pluginFamily'} =~ /Windows : User management/){push @windows_user_management, $h_report;}
+            elsif($h_report->{'-pluginFamily'} =~ /Windows/){push @windows, $h_report;}
+            elsif($h_report->{'-pluginFamily'} =~ /Incident Response/){push @IncidentResponse, $h_report;}
+            elsif($h_report->{'-pluginFamily'} eq ""){push @port_scan, $h_report;}
+            else{ print "\nThere is a new plugin family added, it is $h_report->{'-pluginFamily'}\n";exit;}
+            
+            if ($h_report->{cvss_base_score} || $h_report->{cvss_vector} || $h_report->{cvss_temporal_score}) {
+                if (not defined $cvss_score{$host->{"host-ip"}}) {
+                    $cvss_score{$host->{"host-ip"}}->{critical_base_score} = 0;
+                    $cvss_score{$host->{"host-ip"}}->{high_base_score} = 0;
+                    $cvss_score{$host->{"host-ip"}}->{med_base_score} = 0;
+                    $cvss_score{$host->{"host-ip"}}->{critical_temporal_score} = 0;
+                    $cvss_score{$host->{"host-ip"}}->{high_temporal_score} = 0;
+                    $cvss_score{$host->{"host-ip"}}->{med_temporal_score} = 0;
+                }
+                # end of if (not defined $cvss_score{$host->{"host-ip"}})
+                if ($h_report->{-severity} == 4) {
+                    if ($h_report->{cvss_base_score} ne "N/A") {$cvss_score{$host->{"host-ip"}}->{critical_base_score} = $cvss_score{$host->{"host-ip"}}->{critical_base_score} + $h_report->{cvss_base_score}}
+                    if ($h_report->{cvss_temporal_score} ne "N/A") {$cvss_score{$host->{"host-ip"}}->{critical_temporal_score} = $cvss_score{$host->{"host-ip"}}->{critical_temporal_score} + $h_report->{cvss_temporal_score}}
+                }
+                elsif ($h_report->{-severity} == 3) {
+                    
+                    if ($h_report->{cvss_base_score} ne "N/A") {$cvss_score{$host->{"host-ip"}}->{high_base_score} = $cvss_score{$host->{"host-ip"}}->{high_base_score} + $h_report->{cvss_base_score}}
+                    if ($h_report->{cvss_temporal_score} ne "N/A") {$cvss_score{$host->{"host-ip"}}->{high_temporal_score} = $cvss_score{$host->{"host-ip"}}->{high_temporal_score} + $h_report->{cvss_temporal_score}}
+                }
+                elsif ($h_report->{-severity} == 2) {
+                    if ($h_report->{cvss_base_score} ne "N/A") {$cvss_score{$host->{"host-ip"}}->{med_base_score} = $cvss_score{$host->{"host-ip"}}->{med_base_score} + $h_report->{cvss_base_score}}
+                    if ($h_report->{cvss_temporal_score} ne "N/A") {$cvss_score{$host->{"host-ip"}}->{med_temporal_score} = $cvss_score{$host->{"host-ip"}}->{med_temporal_score} + $h_report->{cvss_temporal_score}}
+                }
+            }
+            # end of if ($h_report->{cvss_base_score} || $h_report->{cvss_vector} || $h_report->{cvss_temporal_score})
+        }
+        # end of foreach my $h_report (@HostReport)
+        
+        my @u = @WindowsUserManagement;
+        $host->{"WindowsUserManagement"} = \@u;
+        my %vuln_cnt;
+        $vuln_cnt{sev0} = 0;
+        $vuln_cnt{sev1} = 0;
+        $vuln_cnt{sev2} = 0;
+        $vuln_cnt{sev3} = 0;
+        $vuln_cnt{sev4} = 0;
+        if($aix_local_security_checks[0] ne ""){$host->{'aix_local_security_checks'} = \@aix_local_security_checks;%vuln_cnt = get_vuln_cnt(\@aix_local_security_checks,\%vuln_cnt)}
+        if($amazon_linux_local_security_checks[0] ne ""){$host->{'amazon_linux_local_security_checks'} = \@amazon_linux_local_security_checks;%vuln_cnt = get_vuln_cnt(\@amazon_linux_local_security_checks,\%vuln_cnt)}
+        if($backdoors[0] ne ""){$host->{'backdoors'} = \@backdoors;%vuln_cnt = get_vuln_cnt(\@backdoors,\%vuln_cnt)}
+        if($centos_local_security_checks[0] ne ""){$host->{'centos_local_security_checks'} = \@centos_local_security_checks;%vuln_cnt = get_vuln_cnt(\@centos_local_security_checks,\%vuln_cnt)}
+        if($cgi_abuses[0] ne ""){$host->{'cgi_abuses'} = \@cgi_abuses;%vuln_cnt = get_vuln_cnt(\@cgi_abuses,\%vuln_cnt)}
+        if($cgi_abuses_xss[0] ne ""){$host->{'cgi_abuses_xss'} = \@cgi_abuses_xss;%vuln_cnt = get_vuln_cnt(\@cgi_abuses_xss,\%vuln_cnt)}
+        if($cisco[0] ne ""){$host->{'cisco'} = \@cisco;%vuln_cnt = get_vuln_cnt(\@cisco,\%vuln_cnt)}
+        if($databases[0] ne ""){$host->{'databases'} = \@databases;%vuln_cnt = get_vuln_cnt(\@databases,\%vuln_cnt)}
+        if($debian_local_security_checks[0] ne ""){$host->{'debian_local_security_checks'} = \@debian_local_security_checks;%vuln_cnt = get_vuln_cnt(\@debian_local_security_checks,\%vuln_cnt)}
+        if($default_unix_accounts[0] ne ""){$host->{'default_unix_accounts'} = \@default_unix_accounts;%vuln_cnt = get_vuln_cnt(\@default_unix_accounts,\%vuln_cnt)}
+        if($denial_of_service[0] ne ""){$host->{'denial_of_service'} = \@denial_of_service;%vuln_cnt = get_vuln_cnt(\@denial_of_service,\%vuln_cnt)}
+        if($dns[0] ne ""){$host->{'dns'} = \@dns;%vuln_cnt = get_vuln_cnt(\@dns,\%vuln_cnt)}
+        if($F5_Networks_Local_Security_Checks[0] ne ""){$host->{'F5_Networks_Local_Security_Checks'} = \@F5_Networks_Local_Security_Checks;%vuln_cnt = get_vuln_cnt(\@F5_Networks_Local_Security_Checks,\%vuln_cnt)}
+        if($fedora_local_security_checks[0] ne ""){$host->{'fedora_local_security_checks'} = \@fedora_local_security_checks;%vuln_cnt = get_vuln_cnt(\@fedora_local_security_checks,\%vuln_cnt)}
+        if($finger_abuses[0] ne ""){$host->{'finger_abuses'} = \@finger_abuses;%vuln_cnt = get_vuln_cnt(\@finger_abuses,\%vuln_cnt)}
+        if($firewalls[0] ne ""){$host->{'firewalls'} = \@firewalls;%vuln_cnt = get_vuln_cnt(\@firewalls,\%vuln_cnt)}
+        if($freebsd_local_security_checks[0] ne ""){$host->{'freebsd_local_security_checks'} = \@freebsd_local_security_checks;%vuln_cnt = get_vuln_cnt(\@freebsd_local_security_checks,\%vuln_cnt)}
+        if($ftp[0] ne ""){$host->{'ftp'} = \@ftp;%vuln_cnt = get_vuln_cnt(\@ftp,\%vuln_cnt)}
+        if($gain_a_shell_remotely[0] ne ""){$host->{'gain_a_shell_remotely'} = \@gain_a_shell_remotely;%vuln_cnt = get_vuln_cnt(\@gain_a_shell_remotely,\%vuln_cnt)}
+        if($general[0] ne ""){$host->{'general'} = \@general;%vuln_cnt = get_vuln_cnt(\@general,\%vuln_cnt)}
+        if($gentoo_local_security_checks[0] ne ""){$host->{'gentoo_local_security_checks'} = \@gentoo_local_security_checks;%vuln_cnt = get_vuln_cnt(\@gentoo_local_security_checks,\%vuln_cnt)}
+        if($hp_ux_local_security_checks[0] ne ""){$host->{'hp_ux_local_security_checks'} = \@hp_ux_local_security_checks;%vuln_cnt = get_vuln_cnt(\@hp_ux_local_security_checks,\%vuln_cnt)}
+        if($Huawei_Local_Security_Checks[0] ne ""){$host->{'Huawei_Local_Security_Checks'} = \@Huawei_Local_Security_Checks;%vuln_cnt = get_vuln_cnt(\@Huawei_Local_Security_Checks,\%vuln_cnt)}
+        if($junos_local_security_checks[0] ne ""){$host->{'junos_local_security_checks'} = \@junos_local_security_checks;%vuln_cnt = get_vuln_cnt(\@junos_local_security_checks,\%vuln_cnt)}
+        if($macos_x_local_security_checks[0] ne ""){$host->{'macos_x_local_security_checks'} = \@macos_x_local_security_checks;%vuln_cnt = get_vuln_cnt(\@macos_x_local_security_checks,\%vuln_cnt)}
+        if($mandriva_local_security_checks[0] ne ""){$host->{'mandriva_local_security_checks'} = \@mandriva_local_security_checks;%vuln_cnt = get_vuln_cnt(\@mandriva_local_security_checks,\%vuln_cnt)}
+        if($misc[0] ne ""){$host->{'misc'} = \@misc;%vuln_cnt = get_vuln_cnt(\@misc,\%vuln_cnt)}
+        if($mobile_devices[0] ne ""){$host->{'mobile_devices'} = \@mobile_devices;%vuln_cnt = get_vuln_cnt(\@mobile_devices,\%vuln_cnt)}
+        if($netware[0] ne ""){$host->{'netware'} = \@netware;%vuln_cnt = get_vuln_cnt(\@netware,\%vuln_cnt)}
+        if($OracleVM_Local_Security_Checks[0] ne ""){$host->{'OracleVM_Local_Security_Checks'} = \@OracleVM_Local_Security_Checks;%vuln_cnt = get_vuln_cnt(\@OracleVM_Local_Security_Checks,\%vuln_cnt)}
+        if($oracle_linux_local_security_checks[0] ne ""){$host->{'oracle_linux_local_security_checks'} = \@oracle_linux_local_security_checks;%vuln_cnt = get_vuln_cnt(\@oracle_linux_local_security_checks,\%vuln_cnt)}
+        if($Palo_Alto_Local_Security_Checks[0] ne ""){$host->{'Palo_Alto_Local_Security_Checks'} = \@Palo_Alto_Local_Security_Checks;%vuln_cnt = get_vuln_cnt(\@Palo_Alto_Local_Security_Checks,\%vuln_cnt)}
+        if($peer_to_peer_file_sharing[0] ne ""){$host->{'peer_to_peer_file_sharing'} = \@peer_to_peer_file_sharing;%vuln_cnt = get_vuln_cnt(\@peer_to_peer_file_sharing,\%vuln_cnt)}
+        if($policy_compliance[0] ne ""){$host->{'policy_compliance'} = \@policy_compliance;}
+        if($port_scanners[0] ne ""){$host->{'port_scanners'} = \@port_scanners;%vuln_cnt = get_vuln_cnt(\@port_scanners,\%vuln_cnt)}
+        if($red_hat_local_security_checks[0] ne ""){$host->{'red_hat_local_security_checks'} = \@red_hat_local_security_checks;%vuln_cnt = get_vuln_cnt(\@red_hat_local_security_checks,\%vuln_cnt)}
+        if($rpc[0] ne ""){$host->{'rpc'} = \@rpc;%vuln_cnt = get_vuln_cnt(\@rpc,\%vuln_cnt)}
+        if($scada[0] ne ""){$host->{'scada'} = \@scada;%vuln_cnt = get_vuln_cnt(\@scada,\%vuln_cnt)}
+        if($scientific_linux_local_security_checks[0] ne ""){$host->{'scientific_linux_local_security_checks'} = \@scientific_linux_local_security_checks;%vuln_cnt = get_vuln_cnt(\@scientific_linux_local_security_checks,\%vuln_cnt)}
+        if($service_detection[0] ne ""){$host->{'service_detection'} = \@service_detection;%vuln_cnt = get_vuln_cnt(\@service_detection,\%vuln_cnt)}
+        if($settings[0] ne ""){$host->{'settings'} = \@settings;%vuln_cnt = get_vuln_cnt(\@settings,\%vuln_cnt)}
+        if($slackware_local_security_checks[0] ne ""){$host->{'slackware_local_security_checks'} = \@slackware_local_security_checks;%vuln_cnt = get_vuln_cnt(\@slackware_local_security_checks,\%vuln_cnt)}
+        if($smtp_problems[0] ne ""){$host->{'smtp_problems'} = \@smtp_problems;%vuln_cnt = get_vuln_cnt(\@smtp_problems,\%vuln_cnt)}
+        if($snmp[0] ne ""){$host->{'snmp'} = \@snmp;%vuln_cnt = get_vuln_cnt(\@snmp,\%vuln_cnt)}
+        if($solaris_local_security_checks[0] ne ""){$host->{'solaris_local_security_checks'} = \@solaris_local_security_checks;%vuln_cnt = get_vuln_cnt(\@solaris_local_security_checks,\%vuln_cnt)}
+        if($suse_local_security_checks[0] ne ""){$host->{'suse_local_security_checks'} = \@suse_local_security_checks;%vuln_cnt = get_vuln_cnt(\@suse_local_security_checks,\%vuln_cnt)}
+        if($ubuntu_local_security_checks[0] ne ""){$host->{'ubuntu_local_security_checks'} = \@ubuntu_local_security_checks;%vuln_cnt = get_vuln_cnt(\@ubuntu_local_security_checks,\%vuln_cnt)}
+        if($vmware_esx_local_security_checks[0] ne ""){$host->{'vmware_esx_local_security_checks'} = \@vmware_esx_local_security_checks;%vuln_cnt = get_vuln_cnt(\@vmware_esx_local_security_checks,\%vuln_cnt)}
+        if($web_servers[0] ne ""){$host->{'web_servers'} = \@web_servers;%vuln_cnt = get_vuln_cnt(\@web_servers,\%vuln_cnt)}
+        if($windows_microsoft_bulletins[0] ne ""){$host->{'windows_microsoft_bulletins'} = \@windows_microsoft_bulletins;%vuln_cnt = get_vuln_cnt(\@windows_microsoft_bulletins,\%vuln_cnt)}
+        if($windows_user_management[0] ne ""){$host->{'windows_user_management'} = \@windows_user_management;%vuln_cnt = get_vuln_cnt(\@windows_user_management,\%vuln_cnt)}
+        if($windows[0] ne ""){$host->{'windows'} = \@windows;%vuln_cnt = get_vuln_cnt(\@windows,\%vuln_cnt)}
+        if($port_scan[0] ne ""){$host->{'port_scan'} = \@port_scan;%vuln_cnt = get_vuln_cnt(\@port_scan,\%vuln_cnt)}
+        if($IncidentResponse[0] ne ""){$host->{'IncidentResponse'} = \@IncidentResponse;%vuln_cnt = get_vuln_cnt(\@IncidentResponse,\%vuln_cnt);}
+        
+        $host->{'vuln_cnt'} = \%vuln_cnt;
+    }
+    # end the Policy Compliance foreach loop
+    print "\nFinished Parsing XML Data\n\n";
+    
+    # General Vulnerability Report
+    print "Create General Vulnerability Data\n";
+    foreach my $host (@report_data){
+        my @report_data;
+        if (ref $host->{host_report} eq "HASH"){push @report_data, $host->{host_report};}
+        else{@report_data = @{$host->{host_report}};}
+        my $name = $host->{name};
+        if (not defined $host->{'host-fqdn'}){$host->{'host-fqdn'} = "N/A";}
+        if($host->{'aix_local_security_checks'}->[0] ne ""){store_vuln($host->{'aix_local_security_checks'},$host->{'file'},$host->{name},$host->{'host-fqdn'},$host->{"netbios-name"},$host->{"operating-system"});print "";}
+        if($host->{'amazon_linux_local_security_checks'}->[0] ne ""){store_vuln($host->{'amazon_linux_local_security_checks'},$host->{'file'},$host->{name},$host->{'host-fqdn'},$host->{"netbios-name"},$host->{"operating-system"});print "";}
+        if($host->{'backdoors'}->[0] ne ""){store_vuln($host->{'backdoors'},$host->{'file'},$host->{name},$host->{'host-fqdn'},$host->{"netbios-name"},$host->{"operating-system"});print "";}
+        if($host->{'centos_local_security_checks'}->[0] ne ""){store_vuln($host->{'centos_local_security_checks'},$host->{'file'},$host->{name},$host->{'host-fqdn'},$host->{"netbios-name"},$host->{"operating-system"});print "";}
+        if($host->{'cgi_abuses'}->[0] ne ""){store_vuln($host->{'cgi_abuses'},$host->{'file'},$host->{name},$host->{'host-fqdn'},$host->{"netbios-name"},$host->{"operating-system"});print "";}
+        if($host->{'cgi_abuses_xss'}->[0] ne ""){store_vuln($host->{'cgi_abuses_xss'},$host->{'file'},$host->{name},$host->{'host-fqdn'},$host->{"netbios-name"},$host->{"operating-system"});print "";}
+        if($host->{'cisco'}->[0] ne ""){store_vuln($host->{'cisco'},$host->{'file'},$host->{name},$host->{'host-fqdn'},$host->{"netbios-name"},$host->{"operating-system"});print "";}
+        if($host->{'databases'}->[0] ne ""){store_vuln($host->{'databases'},$host->{'file'},$host->{name},$host->{'host-fqdn'},$host->{"netbios-name"},$host->{"operating-system"});print "";}
+        if($host->{'debian_local_security_checks'}->[0] ne ""){store_vuln($host->{'debian_local_security_checks'},$host->{'file'},$host->{name},$host->{'host-fqdn'},$host->{"netbios-name"},$host->{"operating-system"});print "";}
+        if($host->{'default_unix_accounts'}->[0] ne ""){store_vuln($host->{'default_unix_accounts'},$host->{'file'},$host->{name},$host->{'host-fqdn'},$host->{"netbios-name"},$host->{"operating-system"});print "";}
+        if($host->{'denial_of_service'}->[0] ne ""){store_vuln($host->{'denial_of_service'},$host->{'file'},$host->{name},$host->{'host-fqdn'},$host->{"netbios-name"},$host->{"operating-system"});print "";}
+        if($host->{'dns'}->[0] ne ""){store_vuln($host->{'dns'},$host->{'file'},$host->{name},$host->{'host-fqdn'},$host->{"netbios-name"},$host->{"operating-system"});print "";}
+        if($host->{'F5_Networks_Local_Security_Checks'}->[0] ne ""){store_vuln($host->{'F5_Networks_Local_Security_Checks'},$host->{'file'},$host->{name},$host->{'host-fqdn'},$host->{"netbios-name"},$host->{"operating-system"});print "";}
+        if($host->{'fedora_local_security_checks'}->[0] ne ""){store_vuln($host->{'fedora_local_security_checks'},$host->{'file'},$host->{name},$host->{'host-fqdn'},$host->{"netbios-name"},$host->{"operating-system"});print "";}
+        if($host->{'finger_abuses'}->[0] ne ""){store_vuln($host->{'finger_abuses'},$host->{'file'},$host->{name},$host->{'host-fqdn'},$host->{"netbios-name"},$host->{"operating-system"});print "";}
+        if($host->{'firewalls'}->[0] ne ""){store_vuln($host->{'firewalls'},$host->{'file'},$host->{name},$host->{'host-fqdn'},$host->{"netbios-name"},$host->{"operating-system"});print "";}
+        if($host->{'freebsd_local_security_checks'}->[0] ne ""){store_vuln($host->{'freebsd_local_security_checks'},$host->{'file'},$host->{name},$host->{'host-fqdn'},$host->{"netbios-name"},$host->{"operating-system"});print "";}
+        if($host->{'ftp'}->[0] ne ""){store_vuln($host->{'ftp'},$host->{'file'},$host->{name},$host->{'host-fqdn'},$host->{"netbios-name"},$host->{"operating-system"});print "";}
+        if($host->{'gain_a_shell_remotely'}->[0] ne ""){store_vuln($host->{'gain_a_shell_remotely'},$host->{'file'},$host->{name},$host->{'host-fqdn'},$host->{"netbios-name"},$host->{"operating-system"});print "";}
+        if($host->{'general'}->[0] ne ""){store_vuln($host->{'general'},$host->{'file'},$host->{name},$host->{'host-fqdn'},$host->{"netbios-name"},$host->{"operating-system"});print "";}
+        if($host->{'gentoo_local_security_checks'}->[0] ne ""){store_vuln($host->{'gentoo_local_security_checks'},$host->{'file'},$host->{name},$host->{'host-fqdn'},$host->{"netbios-name"},$host->{"operating-system"});print "";}
+        if($host->{'hp_ux_local_security_checks'}->[0] ne ""){store_vuln($host->{'hp_ux_local_security_checks'},$host->{'file'},$host->{name},$host->{'host-fqdn'},$host->{"netbios-name"},$host->{"operating-system"});print "";}
+        if($host->{'Huawei_Local_Security_Checks'}->[0] ne ""){store_vuln($host->{'Huawei_Local_Security_Checks'},$host->{'file'},$host->{name},$host->{'host-fqdn'},$host->{"netbios-name"},$host->{"operating-system"});print "";}
+        if($host->{'IncidentResponse'}->[0] ne ""){store_vuln($host->{'IncidentResponse'},$host->{'file'},$host->{name},$host->{'host-fqdn'},$host->{"netbios-name"},$host->{"operating-system"});print "";}
+        if($host->{'junos_local_security_checks'}->[0] ne ""){store_vuln($host->{'junos_local_security_checks'},$host->{'file'},$host->{name},$host->{'host-fqdn'},$host->{"netbios-name"},$host->{"operating-system"});print "";}
+        if($host->{'macos_x_local_security_checks'}->[0] ne ""){store_vuln($host->{'macos_x_local_security_checks'},$host->{'file'},$host->{name},$host->{'host-fqdn'},$host->{"netbios-name"},$host->{"operating-system"});print "";}
+        if($host->{'mandriva_local_security_checks'}->[0] ne ""){store_vuln($host->{'mandriva_local_security_checks'},$host->{'file'},$host->{name},$host->{'host-fqdn'},$host->{"netbios-name"},$host->{"operating-system"});print "";}
+        if($host->{'misc'}->[0] ne ""){store_vuln($host->{'misc'},$host->{'file'},$host->{name},$host->{'host-fqdn'},$host->{"netbios-name"},$host->{"operating-system"});print "";}
+        if($host->{'mobile_devices'}->[0] ne ""){store_vuln($host->{'mobile_devices'},$host->{'file'},$host->{name},$host->{'host-fqdn'},$host->{"netbios-name"},$host->{"operating-system"});print "";}
+        if($host->{'netware'}->[0] ne ""){store_vuln($host->{'netware'},$host->{'file'},$host->{name},$host->{'host-fqdn'},$host->{"netbios-name"},$host->{"operating-system"});print "";}
+        if($host->{'OracleVM_Local_Security_Checks'}->[0] ne ""){store_vuln($host->{'OracleVM_Local_Security_Checks'},$host->{'file'},$host->{name},$host->{'host-fqdn'},$host->{"netbios-name"},$host->{"operating-system"});print "";}
+        if($host->{'oracle_linux_local_security_checks'}->[0] ne ""){store_vuln($host->{'oracle_linux_local_security_checks'},$host->{'file'},$host->{name},$host->{'host-fqdn'},$host->{"netbios-name"},$host->{"operating-system"});print "";}
+        if($host->{'Palo_Alto_Local_Security_Checks'}->[0] ne ""){store_vuln($host->{'Palo_Alto_Local_Security_Checks'},$host->{'file'},$host->{name},$host->{'host-fqdn'},$host->{"netbios-name"},$host->{"operating-system"});print "";}
+        if($host->{'peer_to_peer_file_sharing'}->[0] ne ""){store_vuln($host->{'peer_to_peer_file_sharing'},$host->{'file'},$host->{name},$host->{'host-fqdn'},$host->{"netbios-name"},$host->{"operating-system"});print "";}
+        if($host->{'policy_compliance'}->[0] ne ""){store_vuln($host->{'policy_compliance'},$host->{'file'},$host->{name},$host->{'host-fqdn'},$host->{"netbios-name"},$host->{"operating-system"});print "";}
+        if($host->{'port_scanners'}->[0] ne ""){store_vuln($host->{'port_scanners'},$host->{'file'},$host->{name},$host->{'host-fqdn'},$host->{"netbios-name"},$host->{"operating-system"});print "";}
+        if($host->{'red_hat_local_security_checks'}->[0] ne ""){store_vuln($host->{'red_hat_local_security_checks'},$host->{'file'},$host->{name},$host->{'host-fqdn'},$host->{"netbios-name"},$host->{"operating-system"});print "";}
+        if($host->{'rpc'}->[0] ne ""){store_vuln($host->{'rpc'},$host->{'file'},$host->{name},$host->{'host-fqdn'},$host->{"netbios-name"},$host->{"operating-system"});print "";}
+        if($host->{'scada'}->[0] ne ""){store_vuln($host->{'scada'},$host->{'file'},$host->{name},$host->{'host-fqdn'},$host->{"netbios-name"},$host->{"operating-system"});print "";}
+        if($host->{'scientific_linux_local_security_checks'}->[0] ne ""){store_vuln($host->{'scientific_linux_local_security_checks'},$host->{'file'},$host->{name},$host->{'host-fqdn'},$host->{"netbios-name"},$host->{"operating-system"});print "";}
+        if($host->{'service_detection'}->[0] ne ""){store_vuln($host->{'service_detection'},$host->{'file'},$host->{name},$host->{'host-fqdn'},$host->{"netbios-name"},$host->{"operating-system"});print "";}
+        if($host->{'settings'}->[0] ne ""){store_vuln($host->{'settings'},$host->{'file'},$host->{name},$host->{'host-fqdn'},$host->{"netbios-name"},$host->{"operating-system"});print "";}
+        if($host->{'slackware_local_security_checks'}->[0] ne ""){store_vuln($host->{'slackware_local_security_checks'},$host->{'file'},$host->{name},$host->{'host-fqdn'},$host->{"netbios-name"},$host->{"operating-system"});print "";}
+        if($host->{'smtp_problems'}->[0] ne ""){store_vuln($host->{'smtp_problems'},$host->{'file'},$host->{name},$host->{'host-fqdn'},$host->{"netbios-name"},$host->{"operating-system"});print "";}
+        if($host->{'snmp'}->[0] ne ""){store_vuln($host->{'snmp'},$host->{'file'},$host->{name},$host->{'host-fqdn'},$host->{"netbios-name"},$host->{"operating-system"});print "";}
+        if($host->{'solaris_local_security_checks'}->[0] ne ""){store_vuln($host->{'solaris_local_security_checks'},$host->{'file'},$host->{name},$host->{'host-fqdn'},$host->{"netbios-name"},$host->{"operating-system"});print "";}
+        if($host->{'suse_local_security_checks'}->[0] ne ""){store_vuln($host->{'suse_local_security_checks'},$host->{'file'},$host->{name},$host->{'host-fqdn'},$host->{"netbios-name"},$host->{"operating-system"});print "";}
+        if($host->{'ubuntu_local_security_checks'}->[0] ne ""){store_vuln($host->{'ubuntu_local_security_checks'},$host->{'file'},$host->{name},$host->{'host-fqdn'},$host->{"netbios-name"},$host->{"operating-system"});print "";}
+        if($host->{'vmware_esx_local_security_checks'}->[0] ne ""){store_vuln($host->{'vmware_esx_local_security_checks'},$host->{'file'},$host->{name},$host->{'host-fqdn'},$host->{"netbios-name"},$host->{"operating-system"});print "";}
+        if($host->{'web_servers'}->[0] ne ""){store_vuln($host->{'web_servers'},$host->{'file'},$host->{name},$host->{'host-fqdn'},$host->{"netbios-name"},$host->{"operating-system"});print "";}
+        if($host->{'windows_microsoft_bulletins'}->[0] ne ""){store_vuln($host->{'windows_microsoft_bulletins'},$host->{'file'},$host->{name},$host->{'host-fqdn'},$host->{"netbios-name"},$host->{"operating-system"});print "";}
+        if($host->{'windows_user_management'}->[0] ne ""){store_vuln($host->{'windows_user_management'},$host->{'file'},$host->{name},$host->{'host-fqdn'},$host->{"netbios-name"},$host->{"operating-system"})}
+        if($host->{'windows'}->[0] ne ""){store_vuln($host->{'windows'},$host->{'file'},$host->{name},$host->{'host-fqdn'},$host->{"netbios-name"},$host->{"operating-system"})}
+        if($host->{'port_scan'}->[0] ne ""){store_vuln($host->{'port_scan'},$host->{'file'},$host->{name},$host->{'host-fqdn'},$host->{"netbios-name"},$host->{"operating-system"})}
+        my @MSWinAccounts;
+        my $domain_user_list;
+        my $local_user_list;
+        my $password_policy;
+        my @user_list;
+        foreach (@{$host->{'WindowsUserManagement'}}){
+            if($_->{-pluginID} =~ /10399|10413/){print "";}
+            elsif($_->{-pluginID} =~ /10860/){
+                $local_user_list = $_;}
+            elsif($_->{-pluginID} =~ /17651/){$password_policy = $_;}
+            else{push @MSWinAccounts, $_;}
+        }
+        #end foreach (@WindowsUserManagement)
+        
+        if($host->{DomainController} eq "N" && ref $local_user_list eq "HASH"){
+            #$local_user_list->{plugin_output} =~ s/ {2,}- |\)//g;
+            $local_user_list->{plugin_output} =~ s/( {2,}- )|(\))//g;
+            $local_user_list->{plugin_output} =~ s/ \(/\|/g;
+            $local_user_list->{plugin_output} =~ s/\, /\|/g;
+            $local_user_list->{plugin_output} =~ s/Note that.*$//;
+            $local_user_list->{plugin_output} =~ s/\|id/ id/g;
+            $local_user_list->{plugin_output} =~ s/^\|//;
+            $local_user_list->{plugin_output} =~ s/(\|)+$//;
+            $local_user_list->{plugin_output} =~ s/ id /;/g;
+            $local_user_list->{plugin_output} =~ s/\s{2,}/;/g;
+            
+            @user_list = split /\|/, $local_user_list->{plugin_output};
+            my $user_list_cnt = @user_list;
+            my $splice_cnt = 0;
+            if($user_list[0] eq ""){shift @user_list}
+            foreach (@user_list){if ($_ eq ""){last;}++$splice_cnt;}
+            splice @user_list,$splice_cnt;
+            foreach (@user_list){
+                my @tmp = split /\;/, $_;
+                my %hash;
+                $hash{'name'} = $tmp[0];
+                $hash{'sid'} = $tmp[1];
+                $hash{'type'} = $tmp[2];
+                $_ = \%hash;
+            }
+            # end of foreach (@user_list)
+            print "";
+        }
+        
+        foreach my $acnt_entry (@MSWinAccounts){
+            my @plugin_data;
+            my $act_type;
+            if($acnt_entry->{-pluginID} =~ /10895/){$act_type = "Automatic Account Disabled";}
+            elsif($acnt_entry->{-pluginID} =~ /10896/){$act_type = "Can't Change Password";}
+            elsif($acnt_entry->{-pluginID} =~ /10897/){$act_type = "Account Disabled";}
+            elsif($acnt_entry->{-pluginID} =~ /10898/){$act_type = "Never Changed Password";}
+            elsif($acnt_entry->{-pluginID} =~ /10899/){$act_type = "Never Logged In";}
+            elsif($acnt_entry->{-pluginID} =~ /10900/){$act_type = "Account Disabled";}
+            elsif($acnt_entry->{-pluginID} =~ /10911/){$act_type = "Automatic Account Disabled";}
+            elsif($acnt_entry->{-pluginID} =~ /10912/){$act_type = "Can't Change Password";}
+            elsif($acnt_entry->{-pluginID} =~ /10913/){$act_type = "Account Disabled";}
+            elsif($acnt_entry->{-pluginID} =~ /10914/){$act_type = "Never Changed Password";}
+            elsif($acnt_entry->{-pluginID} =~ /10915/){$act_type = "Never Logged In";}
+            elsif($acnt_entry->{-pluginID} =~ /10916/){$act_type = "Account Disabled";}
+            elsif($acnt_entry->{-pluginID} =~ /10901/){$act_type = "Account Operators";}
+            elsif($acnt_entry->{-pluginID} =~ /10902/){$act_type = "Administrators";}
+            elsif($acnt_entry->{-pluginID} =~ /10903/){$act_type = "Server Operators";}
+            elsif($acnt_entry->{-pluginID} =~ /10904/){$act_type = "Backup Operators";}
+            elsif($acnt_entry->{-pluginID} =~ /10905/){$act_type = "Print Operators";}
+            elsif($acnt_entry->{-pluginID} =~ /10906/){$act_type = "Replicator";}
+            elsif($acnt_entry->{-pluginID} =~ /10907/){$act_type = "Guest Account Belongs to a Group";}
+            elsif($acnt_entry->{-pluginID} =~ /10908/){$act_type = "Domain Administrators";}
+            
+            if ($host->{DomainController} eq "N" && $act_type ne ""){
+                my $a = $acnt_entry->{plugin_output};
+                foreach (@user_list){
+                    my $usr_name = $_->{name};
+                    if ($usr_name =~ /\\/){$usr_name =~ s/\\/\\\\/g;}
+                    my $usr_sid = $_->{sid};
+                    if ($acnt_entry->{-pluginID} =~ /(10916)|(10915)|(10914)|(10913)|(10912)|(10911)|(10910)|(10900)|(10899)|(10898)|(10897)|(10896)|(10895)/){
+                        my $b = "\(\\s\\s\\-\\s\)$usr_name";
+                        if ($a =~ /$b/sm){$_->{$act_type} = "Y"}
+                        else{$_->{$act_type} = "N"}
+                    }
+                    elsif ($acnt_entry->{-pluginID} =~ /(10908)|(10907)|(10906)|(10905)|(10904)|(10903)|(10902)|(10901)/){
+                        $usr_name = "$host->{\"netbios-name\"}.$usr_name";
+                        if ($a =~ /\Q$usr_name\E/ism){$_->{$act_type} = "Y"}
+                        else{$_->{$act_type} = "N"}
+                    }
+                }
+                # end of foreach (@user_list)
+                if ($acnt_entry->{-pluginID} =~ /(10908)|(10907)|(10906)|(10905)|(10904)|(10903)|(10902)|(10901)/){
+                    my $netbios_name = $host->{"netbios-name"};
+                    if($a =~ /(?=\Q$netbios_name\E).+?(\Z)/ism){
+                        my $d = substr($a,$-[0],$+[0]-$-[0]);
+                        $d =~ s/ {2,}- |\)//g;
+                        $d  =~ s/ \(/\|/g;
+                        $d  =~ s/\, /\|/g;
+                        my @d_list = split /\r\n|\r|\n/, $d;
+                        foreach (@d_list){
+                            if ($_ !~ /$netbios_name/){
+                                my @d1 = split /\|/, $_;
+                                my %hash;
+                                $hash{'name'} = $d1[0];
+                                $hash{'type'} = $d1[1];
+                                $hash{$act_type} = "Y";
+                                my $not_in_list = 1;
+                                foreach my $usr (@user_list){
+                                    if($usr->{name} eq $hash{name}){$usr->{$act_type} = "Y";$not_in_list = 0;last;}
+                                }
+                                if($not_in_list == 1){push @user_list, \%hash;}
+                            }
+                            # end of if ($_ !~ /$netbios_name/)
+                        }
+                        # end of foreach (@d_list)
+                    }
+                    # end of if($a =~ /(?=$netbios_name).+?(\Z)/ism)
+                }
+                #  end of if ($acnt_entry->{-pluginID} =~ /10908|10907|10906|10905|10904|10903|10902|10901/)
+            }
+            # end of if ($host->{DomainController} eq "N" && $act_type ne "")
+            
+            if ($host->{DomainController} eq "Y" && $is_domain_controller_users_checked == 0){
+                my $a = $acnt_entry->{plugin_output};
+                foreach (@ADUsers){
+                    my $usr_name = $_->{name};
+                    my $usr_sid = $_->{sid};
+                    if ($a =~ /$usr_name/ism){$_->{$act_type} = "Y"}
+                    else{$_->{$act_type} = "N"}
+                }
+                #end of foreach (@ADUsers)
+            }
+            # end of if ($host->{DomainController} eq "Y" && $is_domain_controller_users_checked == 0)
+        }
+        # end of foreach my $acnt_entry (@MSWinAccounts)
+        if ($host->{DomainController} eq "Y" && $is_domain_controller_users_checked == 0){$is_domain_controller_users_checked = 1;}
+        if ($host->{DomainController} eq "N"){
+            foreach (@user_list){if ($_->{type} eq ""){$_->{type} = "Local User"}}
+            my @new_user_list = @user_list;
+            $host->{'account_info'} = \@new_user_list;
+        }
+        #  end of if ($host->{DomainController} eq "N")
+        if ($password_policy ne ""){
+            my $p = $password_policy->{plugin_output};
+            if($p =~ /(?=Minimum).+?(?=\Z)/ism){$p = substr($p,$-[0],$+[0]-$-[0]);}
+            my @p_tmp = split /\|/, $p;
+            foreach (@p_tmp){
+                my @tmp = split /\:/, $_;
+                $tmp[1] =~ s/\s//g;
+                $host->{$tmp[0]} = $tmp[1];
+            }
+            # end of foreach (@p_tmp)
+            $host->{'password policy'} = $password_policy;
+        }
+        #  end of if ($password_policy ne "")
+        
+        ######  testing to remove the plugin Family Data
+        
+        delete $host->{'aix_local_security_checks'};
+        delete $host->{'amazon_linux_local_security_checks'};
+        delete $host->{'backdoors'};
+        delete $host->{'centos_local_security_checks'};
+        delete $host->{'cgi_abuses'};
+        delete $host->{'cgi_abuses_xss'};
+        delete $host->{'cisco'};
+        delete $host->{'databases'};
+        delete $host->{'debian_local_security_checks'};
+        delete $host->{'default_unix_accounts'};
+        delete $host->{'denial_of_service'};
+        delete $host->{'dns'};
+        delete $host->{'F5_Networks_Local_Security_Checks'};
+        delete $host->{'fedora_local_security_checks'};
+        delete $host->{'finger_abuses'};
+        delete $host->{'firewalls'};
+        delete $host->{'freebsd_local_security_checks'};
+        delete $host->{'ftp'};
+        delete $host->{'gain_a_shell_remotely'};
+        delete $host->{'general'};
+        delete $host->{'gentoo_local_security_checks'};
+        delete $host->{'hp_ux_local_security_checks'};
+        delete $host->{'Huawei_Local_Security_Checks'};
+        delete $host->{'IncidentResponse'};
+        delete $host->{'junos_local_security_checks'};
+        delete $host->{'macos_x_local_security_checks'};
+        delete $host->{'mandriva_local_security_checks'};
+        delete $host->{'misc'};
+        delete $host->{'mobile_devices'};
+        delete $host->{'netware'};
+        delete $host->{'OracleVM_Local_Security_Checks'};
+        delete $host->{'oracle_linux_local_security_checks'};
+        delete $host->{'Palo_Alto_Local_Security_Checks'};
+        delete $host->{'peer_to_peer_file_sharing'};
+        delete $host->{'policy_compliance'};
+        delete $host->{'port_scanners'};
+        delete $host->{'red_hat_local_security_checks'};
+        delete $host->{'rpc'};
+        delete $host->{'scada'};
+        delete $host->{'scientific_linux_local_security_checks'};
+        delete $host->{'service_detection'};
+        delete $host->{'settings'};
+        delete $host->{'slackware_local_security_checks'};
+        delete $host->{'smtp_problems'};
+        delete $host->{'snmp'};
+        delete $host->{'solaris_local_security_checks'};
+        delete $host->{'suse_local_security_checks'};
+        delete $host->{'ubuntu_local_security_checks'};
+        delete $host->{'vmware_esx_local_security_checks'};
+        delete $host->{'web_servers'};
+        delete $host->{'windows_microsoft_bulletins'};
+        delete $host->{'windows_user_management'};
+        delete $host->{'windows'};
+        delete $host->{'port_scan'};        
+        ######  end removeing plugin data
+    }
+    # end foreach my $host (@host_data)
+    push @host_data, @report_data;
+}
+# end of sub normalizeHostData
+
+print "\n\n\n Pause for Testing before reading data\n\n";
 ##############################  END SUBROUTINES
 
-my @host_data;
+
 foreach my $file (@xml_files){
+    print "---------  Parsing $file\n\n";
     my $tpp = XML::TreePP->new();
     my $tree = $tpp->parsefile( $file );
     if($tree->{NessusClientData_v2}){print "Parsing File $file \n\n";}
@@ -827,700 +1629,27 @@ foreach my $file (@xml_files){
         if ($hash{"host-ip"}) {++$total_discovered{$hash{"host-ip"}}}
         
         $hostproperties = \%hash;
-    } # end foreach my $hostproperties (@host_data)
-    push @host_data, @report_data;
+    }
+    # end foreach my $hostproperties (@host_data)
+    
+    normalizeHostData (\@report_data);
+    
+    #push @host_data, @report_data;
     print "Finished Parsing File $file \n\n";
 }
 # end xml file foreach loop
+
+#my $sizeTest = total_size(\@host_data);
+
+#print "the \@host_data is $sizeTest\n\n";
 
 print "Creating Spreadsheet Data\n";
 
 # Extract Policy Compliance
 
-my @PolicyCompliance;
-my @policy_data;
+print "---------------  MOVE THE POLICY ARRAYS TO THE TOP\n\n\n\n";  sleep 3;
 
-print "Preparing Hosts Data\n";
-print "\n\n";
-foreach my $host (@host_data){
-    my @HostReport;
-    my $is_domain_controller = 0;
-    my $temp_domain_list;
-    $host->{"DomainController"} = "N";
-    ####  NEW ARRAYS
-    my @aix_local_security_checks;
-    my @amazon_linux_local_security_checks;
-    my @backdoors;
-    my @centos_local_security_checks;
-    my @cgi_abuses;
-    my @cgi_abuses_xss;
-    my @cisco;
-    my @databases;
-    my @debian_local_security_checks;
-    my @default_unix_accounts;
-    my @denial_of_service;
-    my @dns;
-    my @fedora_local_security_checks;
-    my @finger_abuses;
-    my @firewalls;
-    my @freebsd_local_security_checks;
-    my @ftp;
-    my @gain_a_shell_remotely;
-    my @general;
-    my @gentoo_local_security_checks;
-    my @hp_ux_local_security_checks;
-    my @junos_local_security_checks;
-    my @macos_x_local_security_checks;
-    my @mandriva_local_security_checks;
-    my @misc;
-    my @mobile_devices;
-    my @netware;
-    my @oracle_linux_local_security_checks;
-    my @peer_to_peer_file_sharing;
-    my @policy_compliance;
-    my @port_scanners;
-    my @red_hat_local_security_checks;
-    my @rpc;
-    my @scada;
-    my @scientific_linux_local_security_checks;
-    my @service_detection;
-    my @settings;
-    my @slackware_local_security_checks;
-    my @smtp_problems;
-    my @snmp;
-    my @solaris_local_security_checks;
-    my @suse_local_security_checks;
-    my @ubuntu_local_security_checks;
-    my @vmware_esx_local_security_checks;
-    my @web_servers;
-    my @windows;
-    my @windows_microsoft_bulletins;
-    my @windows_user_management;
-    my @port_scan;
-    my @WindowsUserManagement;
-    ####  END OF NEW ARRAYS
-    
-    if(ref ($host->{host_report}) eq "ARRAY"){@HostReport = @{$host->{host_report}};}
-    elsif(ref ($host->{host_report}) eq "HASH"){push @HostReport,$host->{host_report};}
-    
-    foreach my $h_report (@HostReport){
-        ###  Find the Domain Controller
-        my $is_domain_controller = 0;
-        #print "$h_report->{'-pluginID'} \n";
-        
-        # store data in the %ip_vuln_data hash
-        $ip_vuln_data{$host->{file}}->{$h_report->{-severity}}->{$h_report->{-pluginID}}->{pluginName} = $h_report->{-pluginName};
-        if ($host->{'host-ip'} eq "") {$ip_vuln_data{$host->{file}}->{$h_report->{-severity}}->{$h_report->{-pluginID}}->{ip}->{$host->{'name'}}++;}
-        else{$ip_vuln_data{$host->{file}}->{$h_report->{-severity}}->{$h_report->{-pluginID}}->{ip}->{$host->{'host-ip'}}++;}
-        
-        # 70329 - process info
-        if ($h_report->{-pluginID} == 70329){
-            my %process_info = (
-                'fqdn'         => $host->{"host-fqdn"},
-                'host-ip'      => $host->{"host-ip"},
-                'file'         => $host->{file},
-                'name'         => $host->{name},
-                'netbios-name' => $host->{"netbios-name"},
-            );
-            my $process_info = $h_report->{plugin_output};
-            $process_info =~ s/^Process Overview : \n//;
-            $process_info =~ s/^SID: Process \(PID\)\n//;
-            $process_info =~ s/Process_Information.+process.$//;
-            $process_info =~ s/\n\n\n$//;
-            my @tmp_process = split /\n/,$process_info;
-            foreach my $tp (@tmp_process){
-                my $tp1 = $tp;
-                $tp1 =~ s/^\s\d\s:\s+(((\||)((\-\s)|))|)//;
-                $tp1 =~ s/\s\(\d+\)//;
-                $ms_process_cnt{$tp1}->{$host->{"host-ip"}}++;
-            }
-            # end of foreach my $tp (@tmp_process)
-            $process_info{processes} = \@tmp_process;
-            push @MS_Process_Info, \%process_info;
-        }
-        # end of 70329 - process info
-        
-        #Device Type
-        if ($h_report->{-pluginID} == 54615) {
-            my %device_hash = (
-                'fqdn'         => $host->{"host-fqdn"},
-                'host-ip'      => $host->{"host-ip"},
-                'file'         => $host->{file},
-                'name'         => $host->{name},
-                'netbios-name' => $host->{"netbios-name"},
-            );
-            
-            my $deviceData = $h_report->{plugin_output};
-            $deviceData =~ s/\n/ /g;
-            if ($deviceData =~ /(?<=type : ).*(?=Confidence )/) {$device_hash{type} = substr($deviceData,$-[0],$+[0]-$-[0])}
-            if ($deviceData =~ /Confidence level : \d+/) {
-                $device_hash{confidenceLevel} = substr($deviceData,$-[0],$+[0]-$-[0]);
-                $device_hash{confidenceLevel} =~ s/Confidence level : //;
-            }
-            push @DeviceType, \%device_hash;
-        }
-        #End of Device Type
-        
-        # Enumerate Local Group Memberships
-        if ($h_report->{-pluginID} == 71246){
-            my %EnumLocalGrp = (
-                'fqdn'         => $host->{"host-fqdn"},
-                'host-ip'      => $host->{"host-ip"},
-                'file'         => $host->{file},
-                'name'         => $host->{name},
-                'netbios-name' => $host->{"netbios-name"},
-            );
-            
-            my $EnumLocalGrp = $h_report->{plugin_output};
-            $EnumLocalGrp =~ s/\n/;/g;
-            my @tmp_grp = split ";;",$EnumLocalGrp;
-            foreach my $g (@tmp_grp){
-                my $grp = {};
-                my ($grp_attrib,$members) = split /\;Members/,$g;
-                my @t2 = split /;/,$grp_attrib;
-                foreach my $t3 (@t2){
-                    my @t3 = split /\s+:\s/,$t3;
-                    $grp->{$t3[0]} = $t3[1];
-                }
-                # end of foreach my $t3 (@t2){
-                if ($members =~ /^\s+:\s$/) {
-                    my @t3;
-                    push @t3, 'none';
-                    $grp->{members} = \@t3;
-                }
-                else{
-                    my @t3 = split /;\s+Name\s+:\s+/,$members;
-                    if ($t3[0] =~ /\s+\:\s/) {shift @t3}
-                    foreach my $t4 (@t3){
-                        my $member = {};
-                        $t4 = ";  Name : $t4";
-                        my @t4 = split /;\s+/,$t4;
-                        if ($t4[0] eq '') {shift @t4}
-                        foreach my $t5 (@t4){
-                            my ($k,$v) = split /\s+:\s+/,$t5;
-                            $member->{$k} = $v;
-                        }
-                        # end of foreach my $t5 (@t4)
-                        push @{$grp->{members}},$member
-                    }
-                    # end of foreach my $t4 (@t3)
-                    print "";
-                }
-                # end of if $members
-                print "";
-                $g = $grp;
-            }
-            # end of foreach my $g (@tmp_grp) 
-            $EnumLocalGrp{groups} = \@tmp_grp;
-            push @EnumLocalGrp, \%EnumLocalGrp;
-        }
-        # end of if ($h_report->{-pluginID} == 71246)
-        
-        # CPE info
-        if ($h_report->{cpe}) {
-            my %cpe_hash = (
-                'pluginID'     => $h_report->{'-pluginID'},
-                'cpe'          => $h_report->{cpe},
-                'fqdn'         => $host->{"host-fqdn"},
-                'host-ip'      => $host->{"host-ip"},
-                'file'         => $host->{file},
-                'name'         => $host->{name},
-                'netbios-name' => $host->{"netbios-name"},
-                'pluginFamily' => $h_report->{-pluginFamily},
-                'pluginName'   => $h_report->{-pluginName},
-                'cpe-source'   => 'vuln'
-            );
-            push @cpe_data, \%cpe_hash;
-        }
-        # end of CPE info
-        
-        if($h_report->{'-pluginID'} == 45590){
-            my @cpe_tmp = split /\n/,$h_report->{plugin_output};
-            foreach my $cpe_tmp_e (@cpe_tmp){
-                if ($cpe_tmp_e =~ /cpe\:\/(o|a|h)/) {
-                    $cpe_tmp_e =~ s/\s//g;
-                    my %cpe_hash = (
-                        'pluginID'     => $h_report->{'-pluginID'},
-                        'cpe'          => $cpe_tmp_e,
-                        'fqdn'         => $host->{"host-fqdn"},
-                        'host-ip'      => $host->{"host-ip"},
-                        'file'         => $host->{file},
-                        'name'         => $host->{name},
-                        'netbios-name' => $host->{"netbios-name"},
-                        'pluginFamily' => $h_report->{-pluginFamily},
-                        'pluginName'   => $h_report->{-pluginName},
-                        'cpe-source'   => 'cpe'
-                    );
-                    push @cpe_data, \%cpe_hash; 
-                }
-                # end of if ($cpe_tmp_e =~ /cpe\:\/(o|a)/)
-            }
-            #  foreach my $cpe_tmp_e (@cpe_tmp)
-        }
-        # if($h_report->{'-pluginID'} == 45590)
-        
-        # @ScanInfo
-        if($h_report->{'-pluginID'} == 19506){
-            my $scan_info = $h_report;
-            $scan_info->{"host-ip"} = $host->{"host-ip"};
-            $scan_info->{file} = $host->{file};
-            $scan_info->{name} = $host->{name};
-            $scan_info->{"operating-system"} = $host->{"operating-system"};
-            $scan_info->{"system-type"} = $host->{"system-type"};
-            $scan_info->{HOST_END} = $host->{HOST_END};
-            $scan_info->{HOST_START} = $host->{HOST_START};
-            push @ScanInfo, $scan_info;
-        }
-        # end of if($h_report->{'-pluginID'} == 19506)
-        
-        if($opt{r} ne "" && $recast_plugin{$h_report->{'-pluginID'}}->{old} eq $h_report->{-severity}){
-            $h_report->{-severity} = $recast_plugin{$h_report->{'-pluginID'}}->{new}
-        }
-        # end of if($opt{r} ne "" && $recast_plugin{$h_report->{'-pluginID'}}->{old} eq $h_report->{-severity})
-        
-        if($h_report->{'-pluginID'} =~ /11026/){
-            my %wap_host;
-            $wap_host{'host-fqdn'} = $host->{'host-fqdn'};
-            $wap_host{"host-ip"} = $host->{"host-ip"};
-            $wap_host{"mac-address"} = $host->{"mac-address"};
-            $wap_host{name} = $host->{name};
-            $wap_host{"operating-system"} = $host->{"operating-system"};
-            $wap_host{"system-type"} = $host->{"system-type"};
-            $wap_host{"plugin-output"} = $h_report->{plugin_output};
-            $wap_host{"plugin-output"} =~ s/\n/ /g;
-            push @WirelessAccessPointDetection,\%wap_host;
-        }
-        # end of if($h_report->{'-pluginID'} =~ /11026/)
-        
-        if($h_report->{'-pluginID'} =~ /25197/){
-            my %ssid_host;
-            $ssid_host{'host-fqdn'} = $host->{'host-fqdn'};
-            $ssid_host{"host-ip"} = $host->{"host-ip"};
-            $ssid_host{"mac-address"} = $host->{"mac-address"};
-            $ssid_host{name} = $host->{name};
-            $ssid_host{"operating-system"} = $host->{"operating-system"};
-            $ssid_host{"system-type"} = $host->{"system-type"};
-            my $regex_net_card = '(?<=Network card type : ).*($)';
-            my $regex_ssid = '(?<=Network SSID      : ).*($)';
-            if($h_report->{plugin_output} =~ /$regex_net_card/m){$ssid_host{"nic"} = substr($h_report->{plugin_output},$-[0],$+[0]-$-[0])}
-            if($h_report->{plugin_output} =~ /$regex_ssid/m){$ssid_host{"ssid"} = substr($h_report->{plugin_output},$-[0],$+[0]-$-[0])}
-            push @WinWirelessSSID, \%ssid_host;
-        }
-        # end of if($h_report->{'-pluginID'} =~ /25197/)
-        
-        if($h_report->{'-pluginID'} =~ /10413/  && $ADUsers[0] eq "" && $temp_domain_list eq ""){
-            $is_domain_controller = 1;
-            $host->{"DomainController"} = "Y";
-        }
-        elsif($h_report->{'-pluginID'} =~ /10413/  && $ADUsers[0] eq "" && $temp_domain_list ne ""){
-            store_ad_users($temp_domain_list);
-            $host->{"DomainController"} = "Y";
-        }
-        elsif($h_report->{'-pluginID'} =~ /10860/ && $ADUsers[0] eq "" && $is_domain_controller == 0){
-            $temp_domain_list = $h_report->{plugin_output};
-        }
-        elsif($h_report->{'-pluginID'} =~ /10860/ && $ADUsers[0] eq "" && $is_domain_controller == 1){
-            print "\n\n";print '$h_report->{\'-pluginID\'} =~ /10860/ && $ADUsers[0] eq "" && $is_domain_controller == 1'; 
-        }
-        elsif($h_report->{'-pluginID'} =~ /10860/ && $ADUsers[0] ne "" && $is_domain_controller == 0){
-            $temp_domain_list = $h_report->{plugin_output};
-        }
-        elsif($h_report->{'-pluginID'} =~ /10413/  && $ADUsers[0] ne "" && $temp_domain_list ne ""){
-            store_ad_users($temp_domain_list);
-            $host->{"DomainController"} = "Y";
-        }
-        # end of if..elsif
-        
-        if($h_report->{-pluginID} =~ /(10413)|(17651)|(10916)|(10915)|(10914)|(10913)|(10912)|(10911)|(10910)|(10908)|(10907)|(10906)|(10905)|(10904)|(10903)|(10902)|(10901)|(10900)|(10899)|(10898)|(10897)|(10896)|(10895)|(10894)|(10893)|(10892)|(10860)|(10399)/){
-            #10413 - Microsoft Windows SMB Registry : Remote PDC/BDC Detection
-            #17651 - Microsoft Windows SMB : Obtains the Password Policy
-            #10916 - Microsoft Windows - Local Users Information : Passwords never expire
-            #10915 - Microsoft Windows - Local Users Information : User has never logged on
-            #10914 - Microsoft Windows - Local Users Information : Never changed passwords
-            #10913 - Microsoft Windows - Local Users Information : Disabled accounts
-            #10912 - Microsoft Windows - Local Users Information : Can't change password
-            #10911 - Microsoft Windows - Local Users Information : Automatically disabled accounts
-            #10910 - Microsoft Windows Local User Information
-            #10908 - Microsoft Windows 'Domain Administrators' Group User List
-            #10907 - Microsoft Windows Guest Account Belongs to a Group
-            #10906 - Microsoft Windows 'Replicator' Group User List
-            #10905 - Microsoft Windows 'Print Operators' Group User List
-            #10904 - Microsoft Windows 'Backup Operators' Group User List
-            #10903 - Microsoft Windows 'Server Operators' Group User List
-            #10902 - Microsoft Windows 'Administrators' Group User List
-            #10901 - Microsoft Windows 'Account Operators' Group User List
-            #10900 - Microsoft Windows - Users Information : Passwords never expires
-            #10899 - Microsoft Windows - Users Information : User has never logged in
-            #10898 - Microsoft WIndows - Users Information : Never changed password
-            #10897 - Microsoft Windows - Users Information : disabled accounts
-            #10896 - Microsoft Windows - Users Information : Can't change password
-            #10895 - Microsoft Windows - Users Information : automatically disabled accounts
-            #10894 - Microsoft Windows User Groups List
-            #10893 - Microsoft Windows User Aliases List
-            #10892 - Microsoft Windows Domain User Information
-            #10860 - SMB Use Host SID to Enumerate Local Users
-            #10399 - SMB Use Domain SID to Enumerate Users
-            push @WindowsUserManagement,$h_report;
-        }
-        # end of if($h_report->{-pluginID} =~ /10413|17651|10916|10915|10914|10913|10912|10911|10910|10908|10907|10906|10905|10904|10903|10902|10901|10900|10899|10898|10897|10896|10895|10894|10893|10892|10860|10399/)
-        
-        if($h_report->{-pluginID} =~ /10150/){
-            if ($h_report->{plugin_output} =~ /(?<=Computer name\s ).+?(?= {2,}\= Workgroup)/){
-                $host->{'AD Domain Name'} = substr($h_report->{plugin_output},$-[0],$+[0]-$-[0]);
-            }
-            # end of if
-        }
-        # end of ifif($h_report->{-pluginID} =~ /10150/)
-        if($h_report->{'-pluginFamily'} =~ /AIX Local Security Checks/){push @aix_local_security_checks, $h_report;}
-        elsif($h_report->{'-pluginFamily'} =~ /Amazon Linux Local Security Checks/){push @amazon_linux_local_security_checks, $h_report;}
-        elsif($h_report->{'-pluginFamily'} =~ /Backdoors/){push @backdoors, $h_report;}
-        elsif($h_report->{'-pluginFamily'} =~ /CentOS Local Security Checks/){push @centos_local_security_checks, $h_report;}
-        elsif($h_report->{'-pluginFamily'} =~ /CGI abuses/){push @cgi_abuses, $h_report;}
-        elsif($h_report->{'-pluginFamily'} =~ /CGI abuses : XSS/){push @cgi_abuses_xss, $h_report;}
-        elsif($h_report->{'-pluginFamily'} =~ /CISCO/){push @cisco, $h_report;}
-        elsif($h_report->{'-pluginFamily'} =~ /Databases/){push @databases, $h_report;}
-        elsif($h_report->{'-pluginFamily'} =~ /Debian Local Security Checks/){push @debian_local_security_checks, $h_report;}
-        elsif($h_report->{'-pluginFamily'} =~ /Default Unix Accounts/){push @default_unix_accounts, $h_report;}
-        elsif($h_report->{'-pluginFamily'} =~ /Denial of Service/){push @denial_of_service, $h_report;}
-        elsif($h_report->{'-pluginFamily'} =~ /DNS/){push @dns, $h_report;}
-        elsif($h_report->{'-pluginFamily'} =~ /Fedora Local Security Checks/){push @fedora_local_security_checks, $h_report;}
-        elsif($h_report->{'-pluginFamily'} =~ /Finger abuses/){push @finger_abuses, $h_report;}
-        elsif($h_report->{'-pluginFamily'} =~ /Firewalls/){push @firewalls, $h_report;}
-        elsif($h_report->{'-pluginFamily'} =~ /FreeBSD Local Security Checks/){push @freebsd_local_security_checks, $h_report;}
-        elsif($h_report->{'-pluginFamily'} =~ /FTP/){push @ftp, $h_report;}
-        elsif($h_report->{'-pluginFamily'} =~ /Gain a shell remotely/){push @gain_a_shell_remotely, $h_report;}
-        elsif($h_report->{'-pluginFamily'} =~ /General/){push @general, $h_report;}
-        elsif($h_report->{'-pluginFamily'} =~ /Gentoo Local Security Checks/){push @gentoo_local_security_checks, $h_report;}
-        elsif($h_report->{'-pluginFamily'} =~ /HP-UX Local Security Checks/){push @hp_ux_local_security_checks, $h_report;}
-        elsif($h_report->{'-pluginFamily'} =~ /Junos Local Security Checks/){push @junos_local_security_checks, $h_report;}
-        elsif($h_report->{'-pluginFamily'} =~ /MacOS X Local Security Checks/){push @macos_x_local_security_checks, $h_report;}
-        elsif($h_report->{'-pluginFamily'} =~ /Mandriva Local Security Checks/){push @mandriva_local_security_checks, $h_report;}
-        elsif($h_report->{'-pluginFamily'} =~ /Misc./){push @misc, $h_report;}
-        elsif($h_report->{'-pluginFamily'} =~ /Mobile Devices/){push @mobile_devices, $h_report;}
-        elsif($h_report->{'-pluginFamily'} =~ /Netware/){push @netware, $h_report;}
-        elsif($h_report->{'-pluginFamily'} =~ /Oracle Linux Local Security/){push @oracle_linux_local_security_checks, $h_report;}
-        elsif($h_report->{'-pluginFamily'} =~ /Peer-To-Peer File Sharing/){push @peer_to_peer_file_sharing, $h_report;}
-        elsif($h_report->{'-pluginFamily'} =~ /Policy Compliance/){push @policy_compliance, $h_report;}
-        elsif($h_report->{'-pluginFamily'} =~ /Port scanners/){push @port_scanners, $h_report;}
-        elsif($h_report->{'-pluginFamily'} =~ /Red Hat Local Security Checks/){push @red_hat_local_security_checks, $h_report;}
-        elsif($h_report->{'-pluginFamily'} =~ /RPC/){push @rpc, $h_report;}
-        elsif($h_report->{'-pluginFamily'} =~ /SCADA/){push @scada, $h_report;}
-        elsif($h_report->{'-pluginFamily'} =~ /Scientific Linux Local Security Checks/){push @scientific_linux_local_security_checks, $h_report;}
-        elsif($h_report->{'-pluginFamily'} =~ /Service detection/){push @service_detection, $h_report;}
-        elsif($h_report->{'-pluginFamily'} =~ /Settings/){push @settings, $h_report;}
-        elsif($h_report->{'-pluginFamily'} =~ /Slackware Local Security Checks/){push @slackware_local_security_checks, $h_report;}
-        elsif($h_report->{'-pluginFamily'} =~ /SMTP problems/){push @smtp_problems, $h_report;}
-        elsif($h_report->{'-pluginFamily'} =~ /SNMP/){push @snmp, $h_report;}
-        elsif($h_report->{'-pluginFamily'} =~ /Solaris Local Security Checks/){push @solaris_local_security_checks, $h_report;}
-        elsif($h_report->{'-pluginFamily'} =~ /SuSE Local Security Checks/){push @suse_local_security_checks, $h_report;}
-        elsif($h_report->{'-pluginFamily'} =~ /Ubuntu Local Security Checks/){push @ubuntu_local_security_checks, $h_report;}
-        elsif($h_report->{'-pluginFamily'} =~ /VMware ESX Local Security Checks/){push @vmware_esx_local_security_checks, $h_report;}
-        elsif($h_report->{'-pluginFamily'} =~ /Web Servers/){push @web_servers, $h_report;}
-        elsif($h_report->{'-pluginFamily'} =~ /Windows : Microsoft Bulletins/){push @windows_microsoft_bulletins, $h_report;}
-        elsif($h_report->{'-pluginFamily'} =~ /Windows : User management/){push @windows_user_management, $h_report;}
-        elsif($h_report->{'-pluginFamily'} =~ /Windows/){push @windows, $h_report;}
-        elsif($h_report->{'-pluginFamily'} eq ""){push @port_scan, $h_report;}
-        else{ print "\nThere is a new plugin family added, it is $h_report->{'-pluginFamily'}\n";exit;}
-        
-        if ($h_report->{cvss_base_score} || $h_report->{cvss_vector} || $h_report->{cvss_temporal_score}) {
-            if (not defined $cvss_score{$host->{"host-ip"}}) {
-                $cvss_score{$host->{"host-ip"}}->{critical_base_score} = 0;
-                $cvss_score{$host->{"host-ip"}}->{high_base_score} = 0;
-                $cvss_score{$host->{"host-ip"}}->{med_base_score} = 0;
-                $cvss_score{$host->{"host-ip"}}->{critical_temporal_score} = 0;
-                $cvss_score{$host->{"host-ip"}}->{high_temporal_score} = 0;
-                $cvss_score{$host->{"host-ip"}}->{med_temporal_score} = 0;
-            }
-            # end of if (not defined $cvss_score{$host->{"host-ip"}})
-            if ($h_report->{-severity} == 4) {
-                if ($h_report->{cvss_base_score} ne "N/A") {$cvss_score{$host->{"host-ip"}}->{critical_base_score} = $cvss_score{$host->{"host-ip"}}->{critical_base_score} + $h_report->{cvss_base_score}}
-                if ($h_report->{cvss_temporal_score} ne "N/A") {$cvss_score{$host->{"host-ip"}}->{critical_temporal_score} = $cvss_score{$host->{"host-ip"}}->{critical_temporal_score} + $h_report->{cvss_temporal_score}}
-            }
-            elsif ($h_report->{-severity} == 3) {
-                
-                if ($h_report->{cvss_base_score} ne "N/A") {$cvss_score{$host->{"host-ip"}}->{high_base_score} = $cvss_score{$host->{"host-ip"}}->{high_base_score} + $h_report->{cvss_base_score}}
-                if ($h_report->{cvss_temporal_score} ne "N/A") {$cvss_score{$host->{"host-ip"}}->{high_temporal_score} = $cvss_score{$host->{"host-ip"}}->{high_temporal_score} + $h_report->{cvss_temporal_score}}
-            }
-            elsif ($h_report->{-severity} == 2) {
-                if ($h_report->{cvss_base_score} ne "N/A") {$cvss_score{$host->{"host-ip"}}->{med_base_score} = $cvss_score{$host->{"host-ip"}}->{med_base_score} + $h_report->{cvss_base_score}}
-                if ($h_report->{cvss_temporal_score} ne "N/A") {$cvss_score{$host->{"host-ip"}}->{med_temporal_score} = $cvss_score{$host->{"host-ip"}}->{med_temporal_score} + $h_report->{cvss_temporal_score}}
-            }
-        }
-        # end of if ($h_report->{cvss_base_score} || $h_report->{cvss_vector} || $h_report->{cvss_temporal_score})
-    }
-    # end of foreach my $h_report (@HostReport)
-    
-    my @u = @WindowsUserManagement;
-    $host->{"WindowsUserManagement"} = \@u;
-    my %vuln_cnt;
-    $vuln_cnt{sev0} = 0;
-    $vuln_cnt{sev1} = 0;
-    $vuln_cnt{sev2} = 0;
-    $vuln_cnt{sev3} = 0;
-    $vuln_cnt{sev4} = 0;
-    if($aix_local_security_checks[0] ne ""){$host->{'aix_local_security_checks'} = \@aix_local_security_checks;%vuln_cnt = get_vuln_cnt(\@aix_local_security_checks,\%vuln_cnt)}
-    if($amazon_linux_local_security_checks[0] ne ""){$host->{'amazon_linux_local_security_checks'} = \@amazon_linux_local_security_checks;%vuln_cnt = get_vuln_cnt(\@amazon_linux_local_security_checks,\%vuln_cnt)}
-    if($backdoors[0] ne ""){$host->{'backdoors'} = \@backdoors;%vuln_cnt = get_vuln_cnt(\@backdoors,\%vuln_cnt)}
-    if($centos_local_security_checks[0] ne ""){$host->{'centos_local_security_checks'} = \@centos_local_security_checks;%vuln_cnt = get_vuln_cnt(\@centos_local_security_checks,\%vuln_cnt)}
-    if($cgi_abuses[0] ne ""){$host->{'cgi_abuses'} = \@cgi_abuses;%vuln_cnt = get_vuln_cnt(\@cgi_abuses,\%vuln_cnt)}
-    if($cgi_abuses_xss[0] ne ""){$host->{'cgi_abuses_xss'} = \@cgi_abuses_xss;%vuln_cnt = get_vuln_cnt(\@cgi_abuses_xss,\%vuln_cnt)}
-    if($cisco[0] ne ""){$host->{'cisco'} = \@cisco;%vuln_cnt = get_vuln_cnt(\@cisco,\%vuln_cnt)}
-    if($databases[0] ne ""){$host->{'databases'} = \@databases;%vuln_cnt = get_vuln_cnt(\@databases,\%vuln_cnt)}
-    if($debian_local_security_checks[0] ne ""){$host->{'debian_local_security_checks'} = \@debian_local_security_checks;%vuln_cnt = get_vuln_cnt(\@debian_local_security_checks,\%vuln_cnt)}
-    if($default_unix_accounts[0] ne ""){$host->{'default_unix_accounts'} = \@default_unix_accounts;%vuln_cnt = get_vuln_cnt(\@default_unix_accounts,\%vuln_cnt)}
-    if($denial_of_service[0] ne ""){$host->{'denial_of_service'} = \@denial_of_service;%vuln_cnt = get_vuln_cnt(\@denial_of_service,\%vuln_cnt)}
-    if($dns[0] ne ""){$host->{'dns'} = \@dns;%vuln_cnt = get_vuln_cnt(\@dns,\%vuln_cnt)}
-    if($fedora_local_security_checks[0] ne ""){$host->{'fedora_local_security_checks'} = \@fedora_local_security_checks;%vuln_cnt = get_vuln_cnt(\@fedora_local_security_checks,\%vuln_cnt)}
-    if($finger_abuses[0] ne ""){$host->{'finger_abuses'} = \@finger_abuses;%vuln_cnt = get_vuln_cnt(\@finger_abuses,\%vuln_cnt)}
-    if($firewalls[0] ne ""){$host->{'firewalls'} = \@firewalls;%vuln_cnt = get_vuln_cnt(\@firewalls,\%vuln_cnt)}
-    if($freebsd_local_security_checks[0] ne ""){$host->{'freebsd_local_security_checks'} = \@freebsd_local_security_checks;%vuln_cnt = get_vuln_cnt(\@freebsd_local_security_checks,\%vuln_cnt)}
-    if($ftp[0] ne ""){$host->{'ftp'} = \@ftp;%vuln_cnt = get_vuln_cnt(\@ftp,\%vuln_cnt)}
-    if($gain_a_shell_remotely[0] ne ""){$host->{'gain_a_shell_remotely'} = \@gain_a_shell_remotely;%vuln_cnt = get_vuln_cnt(\@gain_a_shell_remotely,\%vuln_cnt)}
-    if($general[0] ne ""){$host->{'general'} = \@general;%vuln_cnt = get_vuln_cnt(\@general,\%vuln_cnt)}
-    if($gentoo_local_security_checks[0] ne ""){$host->{'gentoo_local_security_checks'} = \@gentoo_local_security_checks;%vuln_cnt = get_vuln_cnt(\@gentoo_local_security_checks,\%vuln_cnt)}
-    if($hp_ux_local_security_checks[0] ne ""){$host->{'hp_ux_local_security_checks'} = \@hp_ux_local_security_checks;%vuln_cnt = get_vuln_cnt(\@hp_ux_local_security_checks,\%vuln_cnt)}
-    if($junos_local_security_checks[0] ne ""){$host->{'junos_local_security_checks'} = \@junos_local_security_checks;%vuln_cnt = get_vuln_cnt(\@junos_local_security_checks,\%vuln_cnt)}
-    if($macos_x_local_security_checks[0] ne ""){$host->{'macos_x_local_security_checks'} = \@macos_x_local_security_checks;%vuln_cnt = get_vuln_cnt(\@macos_x_local_security_checks,\%vuln_cnt)}
-    if($mandriva_local_security_checks[0] ne ""){$host->{'mandriva_local_security_checks'} = \@mandriva_local_security_checks;%vuln_cnt = get_vuln_cnt(\@mandriva_local_security_checks,\%vuln_cnt)}
-    if($misc[0] ne ""){$host->{'misc'} = \@misc;%vuln_cnt = get_vuln_cnt(\@misc,\%vuln_cnt)}
-    if($mobile_devices[0] ne ""){$host->{'mobile_devices'} = \@mobile_devices;%vuln_cnt = get_vuln_cnt(\@mobile_devices,\%vuln_cnt)}
-    if($netware[0] ne ""){$host->{'netware'} = \@netware;%vuln_cnt = get_vuln_cnt(\@netware,\%vuln_cnt)}
-    if($oracle_linux_local_security_checks[0] ne ""){$host->{'oracle_linux_local_security_checks'} = \@oracle_linux_local_security_checks;%vuln_cnt = get_vuln_cnt(\@oracle_linux_local_security_checks,\%vuln_cnt)}
-    if($peer_to_peer_file_sharing[0] ne ""){$host->{'peer_to_peer_file_sharing'} = \@peer_to_peer_file_sharing;%vuln_cnt = get_vuln_cnt(\@peer_to_peer_file_sharing,\%vuln_cnt)}
-    if($policy_compliance[0] ne ""){$host->{'policy_compliance'} = \@policy_compliance;}
-    if($port_scanners[0] ne ""){$host->{'port_scanners'} = \@port_scanners;%vuln_cnt = get_vuln_cnt(\@port_scanners,\%vuln_cnt)}
-    if($red_hat_local_security_checks[0] ne ""){$host->{'red_hat_local_security_checks'} = \@red_hat_local_security_checks;%vuln_cnt = get_vuln_cnt(\@red_hat_local_security_checks,\%vuln_cnt)}
-    if($rpc[0] ne ""){$host->{'rpc'} = \@rpc;%vuln_cnt = get_vuln_cnt(\@rpc,\%vuln_cnt)}
-    if($scada[0] ne ""){$host->{'scada'} = \@scada;%vuln_cnt = get_vuln_cnt(\@scada,\%vuln_cnt)}
-    if($scientific_linux_local_security_checks[0] ne ""){$host->{'scientific_linux_local_security_checks'} = \@scientific_linux_local_security_checks;%vuln_cnt = get_vuln_cnt(\@scientific_linux_local_security_checks,\%vuln_cnt)}
-    if($service_detection[0] ne ""){$host->{'service_detection'} = \@service_detection;%vuln_cnt = get_vuln_cnt(\@service_detection,\%vuln_cnt)}
-    if($settings[0] ne ""){$host->{'settings'} = \@settings;%vuln_cnt = get_vuln_cnt(\@settings,\%vuln_cnt)}
-    if($slackware_local_security_checks[0] ne ""){$host->{'slackware_local_security_checks'} = \@slackware_local_security_checks;%vuln_cnt = get_vuln_cnt(\@slackware_local_security_checks,\%vuln_cnt)}
-    if($smtp_problems[0] ne ""){$host->{'smtp_problems'} = \@smtp_problems;%vuln_cnt = get_vuln_cnt(\@smtp_problems,\%vuln_cnt)}
-    if($snmp[0] ne ""){$host->{'snmp'} = \@snmp;%vuln_cnt = get_vuln_cnt(\@snmp,\%vuln_cnt)}
-    if($solaris_local_security_checks[0] ne ""){$host->{'solaris_local_security_checks'} = \@solaris_local_security_checks;%vuln_cnt = get_vuln_cnt(\@solaris_local_security_checks,\%vuln_cnt)}
-    if($suse_local_security_checks[0] ne ""){$host->{'suse_local_security_checks'} = \@suse_local_security_checks;%vuln_cnt = get_vuln_cnt(\@suse_local_security_checks,\%vuln_cnt)}
-    if($ubuntu_local_security_checks[0] ne ""){$host->{'ubuntu_local_security_checks'} = \@ubuntu_local_security_checks;%vuln_cnt = get_vuln_cnt(\@ubuntu_local_security_checks,\%vuln_cnt)}
-    if($vmware_esx_local_security_checks[0] ne ""){$host->{'vmware_esx_local_security_checks'} = \@vmware_esx_local_security_checks;%vuln_cnt = get_vuln_cnt(\@vmware_esx_local_security_checks,\%vuln_cnt)}
-    if($web_servers[0] ne ""){$host->{'web_servers'} = \@web_servers;%vuln_cnt = get_vuln_cnt(\@web_servers,\%vuln_cnt)}
-    if($windows_microsoft_bulletins[0] ne ""){$host->{'windows_microsoft_bulletins'} = \@windows_microsoft_bulletins;%vuln_cnt = get_vuln_cnt(\@windows_microsoft_bulletins,\%vuln_cnt)}
-    if($windows_user_management[0] ne ""){$host->{'windows_user_management'} = \@windows_user_management;%vuln_cnt = get_vuln_cnt(\@windows_user_management,\%vuln_cnt)}
-    if($windows[0] ne ""){$host->{'windows'} = \@windows;%vuln_cnt = get_vuln_cnt(\@windows,\%vuln_cnt)}
-    if($port_scan[0] ne ""){$host->{'port_scan'} = \@port_scan;%vuln_cnt = get_vuln_cnt(\@port_scan,\%vuln_cnt)}
-    $host->{'vuln_cnt'} = \%vuln_cnt;
-}
-# end the Policy Compliance foreach loop
-print "\nFinished Parsing XML Data\n\n";
 
-# General Vulnerability Report
-print "Create General Vulnerability Data\n";
-foreach my $host (@host_data){
-    my @report_data;
-    if (ref $host->{host_report} eq "HASH"){push @report_data, $host->{host_report};}
-    else{@report_data = @{$host->{host_report}};}
-    my $name = $host->{name};
-    if (not defined $host->{'host-fqdn'}){$host->{'host-fqdn'} = "N/A";}
-    if($host->{'aix_local_security_checks'}->[0] ne ""){store_vuln($host->{'aix_local_security_checks'},$host->{'file'},$host->{name},$host->{'host-fqdn'},$host->{"netbios-name"},$host->{"operating-system"});print "";}
-    if($host->{'amazon_linux_local_security_checks'}->[0] ne ""){store_vuln($host->{'amazon_linux_local_security_checks'},$host->{'file'},$host->{name},$host->{'host-fqdn'},$host->{"netbios-name"},$host->{"operating-system"});print "";}
-    if($host->{'backdoors'}->[0] ne ""){store_vuln($host->{'backdoors'},$host->{'file'},$host->{name},$host->{'host-fqdn'},$host->{"netbios-name"},$host->{"operating-system"});print "";}
-    if($host->{'centos_local_security_checks'}->[0] ne ""){store_vuln($host->{'centos_local_security_checks'},$host->{'file'},$host->{name},$host->{'host-fqdn'},$host->{"netbios-name"},$host->{"operating-system"});print "";}
-    if($host->{'cgi_abuses'}->[0] ne ""){store_vuln($host->{'cgi_abuses'},$host->{'file'},$host->{name},$host->{'host-fqdn'},$host->{"netbios-name"},$host->{"operating-system"});print "";}
-    if($host->{'cgi_abuses_xss'}->[0] ne ""){store_vuln($host->{'cgi_abuses_xss'},$host->{'file'},$host->{name},$host->{'host-fqdn'},$host->{"netbios-name"},$host->{"operating-system"});print "";}
-    if($host->{'cisco'}->[0] ne ""){store_vuln($host->{'cisco'},$host->{'file'},$host->{name},$host->{'host-fqdn'},$host->{"netbios-name"},$host->{"operating-system"});print "";}
-    if($host->{'databases'}->[0] ne ""){store_vuln($host->{'databases'},$host->{'file'},$host->{name},$host->{'host-fqdn'},$host->{"netbios-name"},$host->{"operating-system"});print "";}
-    if($host->{'debian_local_security_checks'}->[0] ne ""){store_vuln($host->{'debian_local_security_checks'},$host->{'file'},$host->{name},$host->{'host-fqdn'},$host->{"netbios-name"},$host->{"operating-system"});print "";}
-    if($host->{'default_unix_accounts'}->[0] ne ""){store_vuln($host->{'default_unix_accounts'},$host->{'file'},$host->{name},$host->{'host-fqdn'},$host->{"netbios-name"},$host->{"operating-system"});print "";}
-    if($host->{'denial_of_service'}->[0] ne ""){store_vuln($host->{'denial_of_service'},$host->{'file'},$host->{name},$host->{'host-fqdn'},$host->{"netbios-name"},$host->{"operating-system"});print "";}
-    if($host->{'dns'}->[0] ne ""){store_vuln($host->{'dns'},$host->{'file'},$host->{name},$host->{'host-fqdn'},$host->{"netbios-name"},$host->{"operating-system"});print "";}
-    if($host->{'fedora_local_security_checks'}->[0] ne ""){store_vuln($host->{'fedora_local_security_checks'},$host->{'file'},$host->{name},$host->{'host-fqdn'},$host->{"netbios-name"},$host->{"operating-system"});print "";}
-    if($host->{'finger_abuses'}->[0] ne ""){store_vuln($host->{'finger_abuses'},$host->{'file'},$host->{name},$host->{'host-fqdn'},$host->{"netbios-name"},$host->{"operating-system"});print "";}
-    if($host->{'firewalls'}->[0] ne ""){store_vuln($host->{'firewalls'},$host->{'file'},$host->{name},$host->{'host-fqdn'},$host->{"netbios-name"},$host->{"operating-system"});print "";}
-    if($host->{'freebsd_local_security_checks'}->[0] ne ""){store_vuln($host->{'freebsd_local_security_checks'},$host->{'file'},$host->{name},$host->{'host-fqdn'},$host->{"netbios-name"},$host->{"operating-system"});print "";}
-    if($host->{'ftp'}->[0] ne ""){store_vuln($host->{'ftp'},$host->{'file'},$host->{name},$host->{'host-fqdn'},$host->{"netbios-name"},$host->{"operating-system"});print "";}
-    if($host->{'gain_a_shell_remotely'}->[0] ne ""){store_vuln($host->{'gain_a_shell_remotely'},$host->{'file'},$host->{name},$host->{'host-fqdn'},$host->{"netbios-name"},$host->{"operating-system"});print "";}
-    if($host->{'general'}->[0] ne ""){store_vuln($host->{'general'},$host->{'file'},$host->{name},$host->{'host-fqdn'},$host->{"netbios-name"},$host->{"operating-system"});print "";}
-    if($host->{'gentoo_local_security_checks'}->[0] ne ""){store_vuln($host->{'gentoo_local_security_checks'},$host->{'file'},$host->{name},$host->{'host-fqdn'},$host->{"netbios-name"},$host->{"operating-system"});print "";}
-    if($host->{'hp_ux_local_security_checks'}->[0] ne ""){store_vuln($host->{'hp_ux_local_security_checks'},$host->{'file'},$host->{name},$host->{'host-fqdn'},$host->{"netbios-name"},$host->{"operating-system"});print "";}
-    if($host->{'junos_local_security_checks'}->[0] ne ""){store_vuln($host->{'hp_ux_local_security_checks'},$host->{'file'},$host->{name},$host->{'host-fqdn'},$host->{"netbios-name"},$host->{"operating-system"});print "";}
-    if($host->{'macos_x_local_security_checks'}->[0] ne ""){store_vuln($host->{'macos_x_local_security_checks'},$host->{'file'},$host->{name},$host->{'host-fqdn'},$host->{"netbios-name"},$host->{"operating-system"});print "";}
-    if($host->{'mandriva_local_security_checks'}->[0] ne ""){store_vuln($host->{'mandriva_local_security_checks'},$host->{'file'},$host->{name},$host->{'host-fqdn'},$host->{"netbios-name"},$host->{"operating-system"});print "";}
-    if($host->{'misc'}->[0] ne ""){store_vuln($host->{'misc'},$host->{'file'},$host->{name},$host->{'host-fqdn'},$host->{"netbios-name"},$host->{"operating-system"});print "";}
-    if($host->{'mobile_devices'}->[0] ne ""){store_vuln($host->{'mobile_devices'},$host->{'file'},$host->{name},$host->{'host-fqdn'},$host->{"netbios-name"},$host->{"operating-system"});print "";}
-    if($host->{'netware'}->[0] ne ""){store_vuln($host->{'netware'},$host->{'file'},$host->{name},$host->{'host-fqdn'},$host->{"netbios-name"},$host->{"operating-system"});print "";}
-    if($host->{'oracle_linux_local_security_checks'}->[0] ne ""){store_vuln($host->{'oracle_linux_local_security_checks'},$host->{'file'},$host->{name},$host->{'host-fqdn'},$host->{"netbios-name"},$host->{"operating-system"});print "";}
-    if($host->{'peer_to_peer_file_sharing'}->[0] ne ""){store_vuln($host->{'peer_to_peer_file_sharing'},$host->{'file'},$host->{name},$host->{'host-fqdn'},$host->{"netbios-name"},$host->{"operating-system"});print "";}
-    if($host->{'policy_compliance'}->[0] ne ""){store_vuln($host->{'policy_compliance'},$host->{'file'},$host->{name},$host->{'host-fqdn'},$host->{"netbios-name"},$host->{"operating-system"});print "";}
-    if($host->{'port_scanners'}->[0] ne ""){store_vuln($host->{'port_scanners'},$host->{'file'},$host->{name},$host->{'host-fqdn'},$host->{"netbios-name"},$host->{"operating-system"});print "";}
-    if($host->{'red_hat_local_security_checks'}->[0] ne ""){store_vuln($host->{'red_hat_local_security_checks'},$host->{'file'},$host->{name},$host->{'host-fqdn'},$host->{"netbios-name"},$host->{"operating-system"});print "";}
-    if($host->{'rpc'}->[0] ne ""){store_vuln($host->{'rpc'},$host->{'file'},$host->{name},$host->{'host-fqdn'},$host->{"netbios-name"},$host->{"operating-system"});print "";}
-    if($host->{'scada'}->[0] ne ""){store_vuln($host->{'scada'},$host->{'file'},$host->{name},$host->{'host-fqdn'},$host->{"netbios-name"},$host->{"operating-system"});print "";}
-    if($host->{'scientific_linux_local_security_checks'}->[0] ne ""){store_vuln($host->{'scientific_linux_local_security_checks'},$host->{'file'},$host->{name},$host->{'host-fqdn'},$host->{"netbios-name"},$host->{"operating-system"});print "";}
-    if($host->{'service_detection'}->[0] ne ""){store_vuln($host->{'service_detection'},$host->{'file'},$host->{name},$host->{'host-fqdn'},$host->{"netbios-name"},$host->{"operating-system"});print "";}
-    if($host->{'settings'}->[0] ne ""){store_vuln($host->{'settings'},$host->{'file'},$host->{name},$host->{'host-fqdn'},$host->{"netbios-name"},$host->{"operating-system"});print "";}
-    if($host->{'slackware_local_security_checks'}->[0] ne ""){store_vuln($host->{'slackware_local_security_checks'},$host->{'file'},$host->{name},$host->{'host-fqdn'},$host->{"netbios-name"},$host->{"operating-system"});print "";}
-    if($host->{'smtp_problems'}->[0] ne ""){store_vuln($host->{'smtp_problems'},$host->{'file'},$host->{name},$host->{'host-fqdn'},$host->{"netbios-name"},$host->{"operating-system"});print "";}
-    if($host->{'snmp'}->[0] ne ""){store_vuln($host->{'snmp'},$host->{'file'},$host->{name},$host->{'host-fqdn'},$host->{"netbios-name"},$host->{"operating-system"});print "";}
-    if($host->{'solaris_local_security_checks'}->[0] ne ""){store_vuln($host->{'solaris_local_security_checks'},$host->{'file'},$host->{name},$host->{'host-fqdn'},$host->{"netbios-name"},$host->{"operating-system"});print "";}
-    if($host->{'suse_local_security_checks'}->[0] ne ""){store_vuln($host->{'suse_local_security_checks'},$host->{'file'},$host->{name},$host->{'host-fqdn'},$host->{"netbios-name"},$host->{"operating-system"});print "";}
-    if($host->{'ubuntu_local_security_checks'}->[0] ne ""){store_vuln($host->{'ubuntu_local_security_checks'},$host->{'file'},$host->{name},$host->{'host-fqdn'},$host->{"netbios-name"},$host->{"operating-system"});print "";}
-    if($host->{'vmware_esx_local_security_checks'}->[0] ne ""){store_vuln($host->{'vmware_esx_local_security_checks'},$host->{'file'},$host->{name},$host->{'host-fqdn'},$host->{"netbios-name"},$host->{"operating-system"});print "";}
-    if($host->{'web_servers'}->[0] ne ""){store_vuln($host->{'web_servers'},$host->{'file'},$host->{name},$host->{'host-fqdn'},$host->{"netbios-name"},$host->{"operating-system"});print "";}
-    if($host->{'windows_microsoft_bulletins'}->[0] ne ""){store_vuln($host->{'windows_microsoft_bulletins'},$host->{'file'},$host->{name},$host->{'host-fqdn'},$host->{"netbios-name"},$host->{"operating-system"});print "";}
-    if($host->{'windows_user_management'}->[0] ne ""){store_vuln($host->{'windows_user_management'},$host->{'file'},$host->{name},$host->{'host-fqdn'},$host->{"netbios-name"},$host->{"operating-system"})}
-    if($host->{'windows'}->[0] ne ""){store_vuln($host->{'windows'},$host->{'file'},$host->{name},$host->{'host-fqdn'},$host->{"netbios-name"},$host->{"operating-system"})}
-    if($host->{'port_scan'}->[0] ne ""){store_vuln($host->{'port_scan'},$host->{'file'},$host->{name},$host->{'host-fqdn'},$host->{"netbios-name"},$host->{"operating-system"})}
-    my @MSWinAccounts;
-    my $domain_user_list;
-    my $local_user_list;
-    my $password_policy;
-    my @user_list;
-    foreach (@{$host->{'WindowsUserManagement'}}){
-        if($_->{-pluginID} =~ /10399|10413/){print "";}
-        elsif($_->{-pluginID} =~ /10860/){
-            $local_user_list = $_;}
-        elsif($_->{-pluginID} =~ /17651/){$password_policy = $_;}
-        else{push @MSWinAccounts, $_;}
-    }
-    #end foreach (@WindowsUserManagement)
-    
-    if($host->{DomainController} eq "N" && ref $local_user_list eq "HASH"){
-        #$local_user_list->{plugin_output} =~ s/ {2,}- |\)//g;
-        $local_user_list->{plugin_output} =~ s/( {2,}- )|(\))//g;
-        $local_user_list->{plugin_output} =~ s/ \(/\|/g;
-        $local_user_list->{plugin_output} =~ s/\, /\|/g;
-        $local_user_list->{plugin_output} =~ s/Note that.*$//;
-        $local_user_list->{plugin_output} =~ s/\|id/ id/g;
-        $local_user_list->{plugin_output} =~ s/^\|//;
-        $local_user_list->{plugin_output} =~ s/(\|)+$//;
-        $local_user_list->{plugin_output} =~ s/ id /;/g;
-        $local_user_list->{plugin_output} =~ s/\s{2,}/;/g;
-        
-        @user_list = split /\|/, $local_user_list->{plugin_output};
-        my $user_list_cnt = @user_list;
-        my $splice_cnt = 0;
-        if($user_list[0] eq ""){shift @user_list}
-        foreach (@user_list){if ($_ eq ""){last;}++$splice_cnt;}
-        splice @user_list,$splice_cnt;
-        foreach (@user_list){
-            my @tmp = split /\;/, $_;
-            my %hash;
-            $hash{'name'} = $tmp[0];
-            $hash{'sid'} = $tmp[1];
-            $hash{'type'} = $tmp[2];
-            $_ = \%hash;
-        }
-        # end of foreach (@user_list)
-    }
-    
-    foreach my $acnt_entry (@MSWinAccounts){
-        my @plugin_data;
-        my $act_type;
-        if($acnt_entry->{-pluginID} =~ /10895/){$act_type = "Automatic Account Disabled";}
-        elsif($acnt_entry->{-pluginID} =~ /10896/){$act_type = "Can't Change Password";}
-        elsif($acnt_entry->{-pluginID} =~ /10897/){$act_type = "Account Disabled";}
-        elsif($acnt_entry->{-pluginID} =~ /10898/){$act_type = "Never Changed Password";}
-        elsif($acnt_entry->{-pluginID} =~ /10899/){$act_type = "Never Logged In";}
-        elsif($acnt_entry->{-pluginID} =~ /10900/){$act_type = "Account Disabled";}
-        elsif($acnt_entry->{-pluginID} =~ /10911/){$act_type = "Automatic Account Disabled";}
-        elsif($acnt_entry->{-pluginID} =~ /10912/){$act_type = "Can't Change Password";}
-        elsif($acnt_entry->{-pluginID} =~ /10913/){$act_type = "Account Disabled";}
-        elsif($acnt_entry->{-pluginID} =~ /10914/){$act_type = "Never Changed Password";}
-        elsif($acnt_entry->{-pluginID} =~ /10915/){$act_type = "Never Logged In";}
-        elsif($acnt_entry->{-pluginID} =~ /10916/){$act_type = "Account Disabled";}
-        elsif($acnt_entry->{-pluginID} =~ /10901/){$act_type = "Account Operators";}
-        elsif($acnt_entry->{-pluginID} =~ /10902/){$act_type = "Administrators";}
-        elsif($acnt_entry->{-pluginID} =~ /10903/){$act_type = "Server Operators";}
-        elsif($acnt_entry->{-pluginID} =~ /10904/){$act_type = "Backup Operators";}
-        elsif($acnt_entry->{-pluginID} =~ /10905/){$act_type = "Print Operators";}
-        elsif($acnt_entry->{-pluginID} =~ /10906/){$act_type = "Replicator";}
-        elsif($acnt_entry->{-pluginID} =~ /10907/){$act_type = "Guest Account Belongs to a Group";}
-        elsif($acnt_entry->{-pluginID} =~ /10908/){$act_type = "Domain Administrators";}
-        
-        if ($host->{DomainController} eq "N" && $act_type ne ""){
-            my $a = $acnt_entry->{plugin_output};
-            foreach (@user_list){
-                my $usr_name = $_->{name};
-                if ($usr_name =~ /\\/){$usr_name =~ s/\\/\\\\/g;}
-                my $usr_sid = $_->{sid};
-                if ($acnt_entry->{-pluginID} =~ /(10916)|(10915)|(10914)|(10913)|(10912)|(10911)|(10910)|(10900)|(10899)|(10898)|(10897)|(10896)|(10895)/){
-                    my $b = "\(\^\\s\\s\\-\\s\)$usr_name\$";
-                    if ($a =~ /$b/ism){$_->{$act_type} = "Y"}
-                    else{$_->{$act_type} = "N"}   
-                }
-                elsif ($acnt_entry->{-pluginID} =~ /(10908)|(10907)|(10906)|(10905)|(10904)|(10903)|(10902)|(10901)/){
-                    $usr_name = "$host->{\"netbios-name\"}.$usr_name";
-                    if ($a =~ /$usr_name/ism){$_->{$act_type} = "Y"}
-                    else{$_->{$act_type} = "N"}
-                }
-            }
-            # end of foreach (@user_list)
-            if ($acnt_entry->{-pluginID} =~ /(10908)|(10907)|(10906)|(10905)|(10904)|(10903)|(10902)|(10901)/){
-                my $netbios_name = $host->{"netbios-name"};
-                if($a =~ /(?=$netbios_name).+?(\Z)/ism){
-                    my $d = substr($a,$-[0],$+[0]-$-[0]);
-                    $d =~ s/ {2,}- |\)//g;
-                    $d  =~ s/ \(/\|/g;
-                    $d  =~ s/\, /\|/g;
-                    my @d_list = split /\r\n|\r|\n/, $d;
-                    foreach (@d_list){
-                        if ($_ !~ /$netbios_name/){
-                            my @d1 = split /\|/, $_;
-                            my %hash;
-                            $hash{'name'} = $d1[0];
-                            $hash{'type'} = $d1[1];
-                            $hash{$act_type} = "Y";
-                            my $not_in_list = 1;
-                            foreach my $usr (@user_list){
-                                if($usr->{name} eq $hash{name}){$usr->{$act_type} = "Y";$not_in_list = 0;last;}
-                            }
-                            if($not_in_list == 1){push @user_list, \%hash;}
-                        }
-                        # end of if ($_ !~ /$netbios_name/)
-                    }
-                    # end of foreach (@d_list)
-                }
-                # end of if($a =~ /(?=$netbios_name).+?(\Z)/ism)
-            }
-            #  end of if ($acnt_entry->{-pluginID} =~ /10908|10907|10906|10905|10904|10903|10902|10901/)
-        }
-        # end of if ($host->{DomainController} eq "N" && $act_type ne "")
-        
-        if ($host->{DomainController} eq "Y" && $is_domain_controller_users_checked == 0){
-            my $a = $acnt_entry->{plugin_output};
-            foreach (@ADUsers){
-                my $usr_name = $_->{name};
-                my $usr_sid = $_->{sid};
-                if ($a =~ /$usr_name/ism){$_->{$act_type} = "Y"}
-                else{$_->{$act_type} = "N"}
-            }
-            #end of foreach (@ADUsers)
-        }
-        # end of if ($host->{DomainController} eq "Y" && $is_domain_controller_users_checked == 0)
-    }
-    # end of foreach my $acnt_entry (@MSWinAccounts)
-    if ($host->{DomainController} eq "Y" && $is_domain_controller_users_checked == 0){$is_domain_controller_users_checked = 1;}
-    if ($host->{DomainController} eq "N"){
-        foreach (@user_list){if ($_->{type} eq ""){$_->{type} = "Local User"}}
-        my @new_user_list = @user_list;
-        $host->{'account_info'} = \@new_user_list;
-    }
-    #  end of if ($host->{DomainController} eq "N")
-    if ($password_policy ne ""){
-        my $p = $password_policy->{plugin_output};
-        if($p =~ /(?=Minimum).+?(?=\Z)/ism){$p = substr($p,$-[0],$+[0]-$-[0]);}
-        my @p_tmp = split /\|/, $p;
-        foreach (@p_tmp){
-            my @tmp = split /\:/, $_;
-            $tmp[1] =~ s/\s//g;
-            $host->{$tmp[0]} = $tmp[1];
-        }
-        # end of foreach (@p_tmp)
-        $host->{'password policy'} = $password_policy;
-    }
-    #  end of if ($password_policy ne "")
-}
-# end foreach my $host (@host_data)
-print "Creating Policy Compliance Data\n";
 
 print "Creating Nessus Report Spreadsheet\n";
 #######################################################  start spreadsheet
@@ -1737,12 +1866,12 @@ $cvss_total_score_worksheet->write(4, 0, 'Host IP Address',$center_border6_forma
 $cvss_total_score_worksheet->write(4, 1, 'Total',$center_border6_format);
 $cvss_total_score_worksheet->write(4, 2, 'Base Total',$center_border6_format);
 $cvss_total_score_worksheet->write(4, 3, 'Temporal Total',$center_border6_format);
-$cvss_total_score_worksheet->write(4, 4, 'Base Critical Sevarity (4)',$center_border6_format);
-$cvss_total_score_worksheet->write(4, 5, 'Temporal Critical Sevarity (4)',$center_border6_format);
-$cvss_total_score_worksheet->write(4, 6, 'Base High Sevarity (3)',$center_border6_format);
-$cvss_total_score_worksheet->write(4, 7, 'Temporal High Sevarity (3)',$center_border6_format);
-$cvss_total_score_worksheet->write(4, 8, 'Base Medium Sevarity (2)',$center_border6_format);
-$cvss_total_score_worksheet->write(4, 9, 'Temporal Medium Sevarity (2)',$center_border6_format);
+$cvss_total_score_worksheet->write(4, 4, 'Base Critical Severity (4)',$center_border6_format);
+$cvss_total_score_worksheet->write(4, 5, 'Temporal Critical Severity (4)',$center_border6_format);
+$cvss_total_score_worksheet->write(4, 6, 'Base High Severity (3)',$center_border6_format);
+$cvss_total_score_worksheet->write(4, 7, 'Temporal High Severity (3)',$center_border6_format);
+$cvss_total_score_worksheet->write(4, 8, 'Base Medium Severity (2)',$center_border6_format);
+$cvss_total_score_worksheet->write(4, 9, 'Temporal Medium Severity (2)',$center_border6_format);
 $cvss_total_score_worksheet->write(1, 1, 'Critical',$center_border6_format);
 $cvss_total_score_worksheet->write(1, 2, 'High',$center_border6_format);
 $cvss_total_score_worksheet->write(1, 3, 'Medium',$center_border6_format);
@@ -1785,7 +1914,7 @@ if($vulnerability_data{criticalvuln}->[0] ne ""){
 if($vulnerability_data{highvuln}->[0] ne ""){
     my $vuln_type = "highvuln";
     my $highvulns_worksheet = $workbook->add_worksheet('High');
-    $highvulns_worksheet->set_tab_color('purple');
+    $highvulns_worksheet->set_tab_color('orange');
     print "Storing $vuln_type Vulnerabilities Table\n";
     $highvulns_worksheet = vulnerability_plugin_worksheet($vuln_type,$highvulns_worksheet);
 }
@@ -1794,7 +1923,7 @@ if($vulnerability_data{highvuln}->[0] ne ""){
 if($vulnerability_data{medvuln}->[0] ne ""){
     my $vuln_type = "medvuln";
     my $medvulns_worksheet = $workbook->add_worksheet('Medium');
-    $medvulns_worksheet->set_tab_color('orange');
+    $medvulns_worksheet->set_tab_color('yellow');
     print "Storing $vuln_type Vulnerabilities Table\n";
     $medvulns_worksheet = vulnerability_plugin_worksheet($vuln_type,$medvulns_worksheet);
 }
@@ -1803,7 +1932,7 @@ if($vulnerability_data{medvuln}->[0] ne ""){
 if($vulnerability_data{lowvuln}->[0] ne ""){
     my $vuln_type = "lowvuln";
     my $lowvulns_worksheet = $workbook->add_worksheet('low');
-    $lowvulns_worksheet->set_tab_color('yellow');
+    $lowvulns_worksheet->set_tab_color('green');
     print "Storing $vuln_type Vulnerabilities Table\n";
     $lowvulns_worksheet = vulnerability_plugin_worksheet($vuln_type,$lowvulns_worksheet);
 }
@@ -1812,7 +1941,7 @@ if($vulnerability_data{lowvuln}->[0] ne ""){
 if($vulnerability_data{nonevuln}->[0] ne ""){
     my $vuln_type = "nonevuln";
     my $nonevulns_worksheet = $workbook->add_worksheet('Information');
-    $nonevulns_worksheet->set_tab_color('green');
+    $nonevulns_worksheet->set_tab_color('blue');
     print "Storing $vuln_type Vulnerabilities Table\n";
     $nonevulns_worksheet = vulnerability_plugin_worksheet($vuln_type,$nonevulns_worksheet);
 }
@@ -2092,7 +2221,7 @@ if($PCIDSS[0] ne "") {
         $PCIDSS_worksheet->write($PCIDSS_ctr, 7, $_->{vuln}->{plugin_type},$cell_format);
         $PCIDSS_worksheet->write($PCIDSS_ctr, 8, $_->{vuln}->{synopsis},$cell_format);
         $PCIDSS_worksheet->write($PCIDSS_ctr, 9, $_->{vuln}->{plugin_output},$cell_format);
-        $PCIDSS_worksheet->write($PCIDSS_ctr, 10, $_->{vuln}->{see_also},$cell_format);
+        $PCIDSS_worksheet->write($PCIDSS_ctr, 10, " $_->{vuln}->{see_also}",$cell_format);
         ++$PCIDSS_ctr;
     }
     # end foreach (@PCIDSS)
@@ -2263,7 +2392,6 @@ if($MS_Process_Info[0] ne ""){
 # end of @MS_Process_Info
 
 if(keys %ms_process_cnt > 0){
-    
     my $ms_process_cnt_ctr = 2;
     print "Storing MS Process Count Table\n";
     my $ms_process_cnt_worksheet = $workbook->add_worksheet('MS Process Count');
@@ -2758,7 +2886,7 @@ foreach my $t1 (@targets){
             foreach my $octet (@net1) {$net1_ip_number <<= 8;$net1_ip_number |= $octet;}
             my $net2_ip_number = 0;
             foreach my $octet (@net2) {$net2_ip_number <<= 8;$net2_ip_number |= $octet;}
-            my $net_cnt_tmp = $net2_ip_number - $net1_ip_number;
+            my $net_cnt_tmp = $net2_ip_number - $net1_ip_number + 1;
             $target_cnt = $target_cnt + $net_cnt_tmp;
         }
         else{++$target_cnt;}
@@ -2779,7 +2907,17 @@ if($vulnerability_data{highvuln}->[0] ne ""){
     my $t = new Data::Table($pivot_data, $header, 0);
     $t->sort("count2",0,1,"CVE7",1,0,"OSVDB8",1,0);
     my @t = @{$t->{data}};
-    $most_high_common_vuln = shift @t;
+    
+    my %sorted_keys = %{$vuln_totals{3}};
+    my @sorted_keys2 = sort { $sorted_keys{$a} <=> $sorted_keys{$b} } keys %sorted_keys;
+    $most_high_common_vuln = pop @sorted_keys2;
+    foreach my $m (@{$vulnerability_data{highvuln}}){
+        if($most_high_common_vuln eq $m->[0]){$most_high_common_vuln = $m;last;}
+    }
+    # end of foreach my $m (@{$vulnerability_data{highvuln}})
+    
+    
+    print "";
 }
 # end of if($highvuln[0] ne "")
 
@@ -2794,16 +2932,33 @@ if($vulnerability_data{criticalvuln}->[0] ne ""){
     my $t = new Data::Table($pivot_data, $header, 0);
     $t->sort("count2",0,1,"CVE7",1,0,"OSVDB8",1,0);
     my @t = @{$t->{data}};
-    $most_critical_common_vuln = shift @t;
+    
+    my %sorted_keys = %{$vuln_totals{4}};
+    my @sorted_keys2 = sort { $sorted_keys{$a} <=> $sorted_keys{$b} } keys %sorted_keys;
+    $most_critical_common_vuln = pop @sorted_keys2;
+    foreach my $m (@{$vulnerability_data{criticalvuln}}){
+        if($most_critical_common_vuln eq $m->[0]){$most_critical_common_vuln = $m;last;}
+    }
+    # end of foreach my $m (@{$vulnerability_data{criticalvuln}})
 }
 # end of if($criticalvuln[0] ne "")
 
 my $total_discovered = keys (%total_discovered);
 my $total_critical = @{$vulnerability_data{criticalvuln}};
+my $total_critical2 = keys %{$vuln_totals{4}};
+
 my $total_high = @{$vulnerability_data{highvuln}};
+my $total_high2 = keys %{$vuln_totals{3}};
+
 my $total_med = @{$vulnerability_data{medvuln}};
+my $total_med2 = keys %{$vuln_totals{2}};
+
 my $total_low = @{$vulnerability_data{lowvuln}};
+my $total_low2 = keys %{$vuln_totals{1}};
+
 my $total_none = @{$vulnerability_data{nonevuln}};
+my $total_none2 = keys %{$vuln_totals{0}};
+
 my $total_discovered_row = $total_discovered +2;
 
 ++$Home_cnt;++$Home_cnt;
@@ -2817,19 +2972,19 @@ $Home_worksheet->write($Home_cnt, 1, "$total_discovered");
 ++$Home_cnt;
 ++$Home_cnt;
 $Home_worksheet->write($Home_cnt, 0, "Total Unique Critical Severity Vulnerability");
-$Home_worksheet->write($Home_cnt, 1, $total_critical);
+$Home_worksheet->write($Home_cnt, 1, $total_critical2);
 ++$Home_cnt;
 $Home_worksheet->write($Home_cnt, 0, "Total Unique High Severity Vulnerability");
-$Home_worksheet->write($Home_cnt, 1, $total_high);
+$Home_worksheet->write($Home_cnt, 1, $total_high2);
 ++$Home_cnt;
 $Home_worksheet->write($Home_cnt, 0, "Total Unique Medium Severity Vulnerability");
-$Home_worksheet->write($Home_cnt, 1, $total_med);
+$Home_worksheet->write($Home_cnt, 1, $total_med2);
 ++$Home_cnt;
 $Home_worksheet->write($Home_cnt, 0, "Total Unique Low Severity Vulnerability");
-$Home_worksheet->write($Home_cnt, 1, $total_low);
+$Home_worksheet->write($Home_cnt, 1, $total_low2);
 ++$Home_cnt;
 $Home_worksheet->write($Home_cnt, 0, "Total Unique Informational Severity Vulnerability");
-$Home_worksheet->write($Home_cnt, 1, $total_none);
+$Home_worksheet->write($Home_cnt, 1, $total_none2);
 ++$Home_cnt;
 ++$Home_cnt;
 $total_critical = $total_critical+2;
@@ -2857,6 +3012,9 @@ $Home_worksheet->write($Home_cnt, 0, "The most common Critical Severity vulnerab
 if($most_critical_common_vuln){$Home_worksheet->write($Home_cnt, 1, $most_critical_common_vuln->[3]);}
 ++$Home_cnt;
 $Home_worksheet->write($Home_cnt, 0, "The most common high Severity vulnerability");
+
+####### PUT IN TESTING IS $most_high_common_vuln is a string or hash
+
 if($most_high_common_vuln){$Home_worksheet->write($Home_cnt, 1, $most_high_common_vuln->[3]);}
 ++$Home_cnt;
 $Home_worksheet->write($Home_cnt, 0, "Number of System with a critical(4) Severity Vulnerability");
@@ -2879,7 +3037,7 @@ $Home_worksheet->write($Home_cnt, 1, "\=COUNTIF\(HostConfigData\!I3\:I$total_dis
 $workbook->close();
 print $new_stuff;
 print "\n\ncompleted\n\nThe Data is stored in $dir/$report_prefix\_$report_file.xlsx";
-print "\nEND OF VERSION 0.21 - BETA5\n";
+print "\nEND OF VERSION 0.24\n";
 
 __END__
 
