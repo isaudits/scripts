@@ -5,8 +5,9 @@
 # Script to run and parse SMB message signing results using Nmap's smb-security-mode.nse or RunFinger.py
 # 11/01/2017 - Test of different options and conditions
 # 11/03/2017 - Added support for RunFinger.py stdout input file parsing
+# 01/12/2021 - grepable format is now default in RunFinger
 varDateCreated="10/30/2017"
-varDateLastMod="11/03/2017"
+varDateLastMod="01/12/2021"
 
 # Set location for RunFinger.py
 varRunFingerLocation="/usr/share/responder/tools/RunFinger.py"
@@ -113,7 +114,7 @@ function fnScan {
   if [ "$varTool" = "Nmap" ]; then
     nmap -iL "$varOutDir/$varTempAddrs" -sS -Pn -n -p 445 --open --script smb-security-mode.nse > "$varOutDir/$varOutScan"
   elif [ "$varTool" = "RunFinger" ]; then
-    cat "$varOutDir/$varTempAddrs" | xargs -I % python "$varRunFingerLocation" -g -i % > "$varOutDir/$varOutScan"
+    cat "$varOutDir/$varTempAddrs" | xargs -I % python "$varRunFingerLocation" -i % > "$varOutDir/$varOutScan"
   fi
   varTimeNow=$(date +%H:%M)
   echo "$varTimeNow - $varTool completed (see $varOutScan)."
