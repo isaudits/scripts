@@ -1,6 +1,11 @@
 <#
 phillips321.co.uk ADAudit.ps1
 Changelog:
+    v4.9 - Bug fix in checking password comlexity
+    v4.8 - Added checks for vista, win7 and 2008 old operating systems. Added insecure DNS zone checks.
+    v4.7 - Added powershel-v2 suport and fixed array issue
+    v4.6 - Fixed potential division by zero
+    v4.5 - PR to resolve count issue when count = 1
     v4.4 - Reinstated nessus fix and put output in a list for findings, changed Get-AdminSDHolders with Get-PrivilegedGroupAccounts
     v4.3 - Temp fix with nessus output
     v4.2 - Bug fix on cpassword count
@@ -48,9 +53,10 @@ param (
   [switch]$ouperms = $false,
   [switch]$laps = $false,
   [switch]$authpolsilos = $false,
+  [switch]$insecurednszone = $false,
   [switch]$all = $false
 )
-$versionnum = "v4.3"
+$versionnum = "v4.5"
 function Write-Both(){#writes to console screen and output file
     Write-Host "$args"; Add-Content -Path "$outputdir\consolelog.txt" -Value "$args"}
 function Write-Nessus-Header(){#creates nessus XML file header
@@ -69,12 +75,27 @@ function Write-Nessus-Finding( [string]$pluginname, [string]$pluginid, [string]$
 function Write-Nessus-Footer(){
     Add-Content -Path "$outputdir\adaudit.nessus" -Value "</ReportHost></Report></AdAudit>"
 }
+
+Function Get-DNSZoneInsecure{#Check DNS zones allowing insecure updates
+    $count = 0
+    $progresscount = 0
+    $insecurezones = Get-DnsServerZone | Where-Object {$_.DynamicUpdate -like '*nonsecure*'}
+    $totalcount = ($insecurezones | Measure-Object | Select-Object Count).count
+        if ($totalcount -gt 0){
+		foreach ($insecurezone in $insecurezones ) {Add-Content -Path "$outputdir\insecure_dns_zones.txt" -Value "The DNS Zone $($insecurezone.ZoneName) allows insecure updates ($($insecurezone.DynamicUpdate))"}
+	    #$insecurezones | Out-File $outputdir\insecure_dns_zones.txt
+        Write-Both "    [!] There were $totalcount DNS zones configured to allow insecure updates (KB842)"
+        Write-Nessus-Finding "InsecureDNSZone" "KB842" ([System.IO.File]::ReadAllText("$outputdir\insecure_dns_zones.txt"))
+		}
+    }
+	
 function Get-OUPerms{#Check for non-standard perms for authenticated users, domain users, users and everyone groups
     $count = 0
     $progresscount = 0
     $objects = (Get-ADObject -Filter *)
-    $totalcount = $objects.count
+    $totalcount = ($objects | Measure-Object | Select-Object Count).count
     foreach ($object in $objects) {
+        if ($totalcount -eq 0) {break}
         $progresscount++
         Write-Progress -Activity "Searching for non standard permissions for authenticated users..." -Status "Currently identifed $count" -PercentComplete ($progresscount / $totalcount*100)
         $output = (Get-Acl AD:$object).Access | where-object {($_.IdentityReference -eq 'NT Authority\Authenticated Users') -or ($_.IdentityReference -eq 'Everyone') -or ($_.IdentityReference -like '*\Domain Users') -or ($_.IdentityReference -eq 'BUILTIN\Users')} | Where-Object {($_.ActiveDirectoryRights -ne 'GenericRead') -and ($_.ActiveDirectoryRights -ne 'GenericExecute') -and ($_.ActiveDirectoryRights -ne 'ExtendedRight') -and ($_.ActiveDirectoryRights -ne 'ReadControl') -and ($_.ActiveDirectoryRights -ne 'ReadProperty') -and ($_.ActiveDirectoryRights -ne 'ListObject') -and ($_.ActiveDirectoryRights -ne 'ListChildren') -and ($_.ActiveDirectoryRights -ne 'ListChildren, ReadProperty, ListObject') -and ($_.ActiveDirectoryRights -ne 'ReadProperty, GenericExecute') -and ($_.AccessControlType -ne 'Deny')}
@@ -82,7 +103,7 @@ function Get-OUPerms{#Check for non-standard perms for authenticated users, doma
     }
     if ($count -gt 0){
         Write-Both "    [!] Issue identified, see $outputdir\ou_permissions.txt"
-        Write-Nessus-Finding "OUPermissions" "KB551" (Get-Content -Raw -Path "$outputdir\ou_permissions.txt")
+        Write-Nessus-Finding "OUPermissions" "KB551" ([System.IO.File]::ReadAllText("$outputdir\ou_permissions.txt"))
     }
 }
 function Get-LAPSStatus{#Check for presence of LAPS in domain
@@ -98,21 +119,22 @@ function Get-LAPSStatus{#Check for presence of LAPS in domain
 }
 
 Function Get-PrivilegedGroupAccounts{#lists users in Admininstrators, DA and EA groups
-    $privilegedusers = Get-ADGroupMember administrators -Recursive
+    [array]$privilegedusers = @()
+    $privilegedusers += Get-ADGroupMember "administrators" -Recursive
     $privilegedusers += Get-ADGroupMember "domain admins" -Recursive
     $privilegedusers += Get-ADGroupMember "enterprise admins" -Recursive
     $privusersunique = $privilegedusers | Sort-Object -Unique
     $count = 0
-    $totalcount = $privilegedusers.count
-
+    $totalcount = ($privilegedusers | Measure-Object | Select-Object Count).count
     ForEach ($account in $privusersunique){
+        if ($totalcount -eq 0) {break}
         Write-Progress -Activity "Searching for users who are in privileged groups..." -Status "Currently identifed $count" -PercentComplete ($count / $totalcount*100)
         Add-Content -Path "$outputdir\accounts_userPrivileged.txt" -Value "$($account.SamAccountName) ($($account.Name))"
         $count++
     }
     if ($count -gt 0){
         Write-Both "    [!] There are $count accounts in privileged groups, see accounts_userPrivileged.txt (KB426)"
-        Write-Nessus-Finding "AdminSDHolders" "KB426" (Get-Content -Raw -Path "$outputdir\accounts_userPrivileged.txt")
+        Write-Nessus-Finding "AdminSDHolders" "KB426" ([System.IO.File]::ReadAllText("$outputdir\accounts_userPrivileged.txt"))
     }
 }
 
@@ -121,8 +143,9 @@ function Get-ProtectedUsers{#lists users in "Protected Users" group (2012R2 and 
     if ($DomainLevel -eq "Windows2012Domain" -or $DomainLevel -eq "Windows2012R2Domain" -or $DomainLevel -eq "Windows2016Domain"){#Checking for 2012 or above domain functional level
         $count = 0
         $protectedaccounts = (Get-ADGroup "Protected Users" -Properties members).Members
-        $totalcount = $protectedaccounts.count
+        $totalcount = ($protectedaccounts | Measure-Object | Select-Object Count).count
         ForEach ($members in $protectedaccounts){
+            if ($totalcount -eq 0) {break}
             Write-Progress -Activity "Searching for ptoected users..." -Status "Currently identifed $count" -PercentComplete ($count / $totalcount*100)
             $account = Get-ADObject $members -Properties samaccountname
             Add-Content -Path "$outputdir\accounts_protectedusers.txt" -Value "$($account.SamAccountName) ($($account.Name))"
@@ -130,7 +153,7 @@ function Get-ProtectedUsers{#lists users in "Protected Users" group (2012R2 and 
         }
         if ($count -gt 0){
             Write-Both "    [!] There are $count accounts in the 'Protected Users' group, see accounts_protectedusers.txt"
-            Write-Nessus-Finding "ProtectedUsers" "KB549" (Get-Content -Raw -Path "$outputdir\accounts_protectedusers.txt")
+            Write-Nessus-Finding "ProtectedUsers" "KB549" ([System.IO.File]::ReadAllText("$outputdir\accounts_protectedusers.txt"))
         }
     }
     else {Write-Both "    [-] Not Windows 2012 Domain Functional level or above, skipping Get-ProtectedUsers check."}
@@ -154,7 +177,7 @@ function Get-MachineAccountQuota{#get number of machines a user can add to a dom
 }
 function Get-PasswordPolicy{
 	Write-Both 	"    [+] Checking default password policy"
-    if (!(Get-ADDefaultDomainPasswordPolicy).PasswordComplexity) { Write-Both "    [!] Password Complexity not enabled (KB262)" ; Write-Nessus-Finding "PasswordComplexity" "KB262" "Password Complexity not enabled"}
+    if (!(Get-ADDefaultDomainPasswordPolicy).ComplexityEnabled) { Write-Both "    [!] Password Complexity not enabled (KB262)" ; Write-Nessus-Finding "PasswordComplexity" "KB262" "Password Complexity not enabled"}
     if ((Get-ADDefaultDomainPasswordPolicy).LockoutThreshold -lt 5) {Write-Both "    [!] Lockout threshold is less than 5, currently set to $((Get-ADDefaultDomainPasswordPolicy).LockoutThreshold) (KB263)"  ; Write-Nessus-Finding "LockoutThreshold" "KB263" "Lockout threshold is less than 5, currently set to $((Get-ADDefaultDomainPasswordPolicy).LockoutThreshold)"}
     if ((Get-ADDefaultDomainPasswordPolicy).MinPasswordLength -lt 14) {Write-Both "    [!] Minimum password length is less than 14, currently set to $((Get-ADDefaultDomainPasswordPolicy).MinPasswordLength) (KB262)" ; Write-Nessus-Finding "PasswordLength" "KB262" "Minimum password length is less than 14, currently set to $((Get-ADDefaultDomainPasswordPolicy).MinPasswordLength)" }
     if ((Get-ADDefaultDomainPasswordPolicy).ReversibleEncryptionEnabled) {Write-Both "    [!] Reversible encryption is enabled" }
@@ -179,6 +202,7 @@ function Get-NULLSessions{
     if ((Get-ItemProperty -Path HKLM:\SYSTEM\CurrentControlSet\Control\Lsa).RestrictAnonymousSam -eq 0) {Write-Both "    [!] RestrictAnonymousSam is set to 0! (KB81)" ; Write-Nessus-Finding "NullSessions" "KB81" " RestrictAnonymous is set to 0" }
     if ((Get-ItemProperty -Path HKLM:\SYSTEM\CurrentControlSet\Control\Lsa).everyoneincludesanonymous -eq 1) {Write-Both "    [!] EveryoneIncludesAnonymous is set to 1! (KB81)" ; Write-Nessus-Finding "NullSessions" "KB81" "EveryoneIncludesAnonymous is set to 1" }
 }
+
 function Get-DomainTrusts{#lists domain trusts if they are bad
     ForEach ($trust in (Get-ADObject -Filter {objectClass -eq "trustedDomain"} -Properties TrustPartner,TrustDirection,trustType,trustAttributes)){
         if ($trust.TrustDirection -eq 2){
@@ -221,8 +245,9 @@ function Get-UserPasswordNotChangedRecently{#Reports users that haven't changed 
     $count = 0
     $DaysAgo=(Get-Date).AddDays(-90)
     $accountsoldpasswords = get-aduser -filter {PwdLastSet -lt $DaysAgo -and enabled -eq "true"} -properties passwordlastset
-    $totalcount= $accountsoldpasswords.count
+    $totalcount= ($accountsoldpasswords | Measure-Object | Select-Object Count).count
     ForEach ($account in $accountsoldpasswords){
+        if ($totalcount -eq 0) {break}
         Write-Progress -Activity "Searching for passwords older than 90days..." -Status "Currently identifed $count" -PercentComplete ($count / $totalcount*100)
         if ($account.PasswordLastSet){$datelastchanged = $account.PasswordLastSet} else {$datelastchanged = "Never"}
         Add-Content -Path "$outputdir\accounts_with_old_passwords.txt" -Value "User $($account.SamAccountName) ($($account.Name)) has not changed their password since $datelastchanged"
@@ -230,7 +255,7 @@ function Get-UserPasswordNotChangedRecently{#Reports users that haven't changed 
     }
     if ($count -gt 0){
         Write-Both "    [!] $count accounts with passwords older than 90days, see accounts_with_old_passwords.txt (KB550)"
-        Write-Nessus-Finding "AccountsWithOldPasswords" "KB550" (Get-Content -Raw -Path "$outputdir\accounts_with_old_passwords.txt")
+        Write-Nessus-Finding "AccountsWithOldPasswords" "KB550" ([System.IO.File]::ReadAllText("$outputdir\accounts_with_old_passwords.txt"))
     }
     $krbtgtPasswordDate = (get-aduser -Filter {samaccountname -eq "krbtgt"} -Properties PasswordLastSet).PasswordLastSet
     if ($krbtgtPasswordDate -lt (Get-Date).AddDays(-180)){
@@ -250,8 +275,9 @@ function Get-GPOtoFile{#oututs complete GPO report
 function Get-GPOsPerOU{#Lists all OUs and which GPOs apply to them
     $count = 0
     $ousgpos = @(Get-ADOrganizationalUnit -Filter *)
-    $totalcount = $ousgpos.count
+    $totalcount = ($ousgpos | Measure-Object | Select-Object Count).count
     foreach ($ouobject in $ousgpos){
+        if ($totalcount -eq 0) {break}
         Write-Progress -Activity "Identifying which GPOs apply to which OUs..." -Status "Currently identifed $count OUs" -PercentComplete ($count / $totalcount*100)
         $combinedgpos = ($(((Get-GPInheritance -Target $ouobject).InheritedGpoLinks) | select DisplayName) | ForEach-Object { $_.DisplayName }) -join ','
         Add-Content -Path "$outputdir\ous_inheritedGPOs.txt" -Value "$($ouobject.Name) Inherits these GPOs: $combinedgpos"
@@ -272,8 +298,9 @@ function Get-SYSVOLXMLS{#finds XML files in SYSVOL (thanks --> https://github.co
     $count = 0
     if ($XMLFiles){
         $progresscount = 0
-        $totalcount = $XMLFiles.count
+        $totalcount = ($XMLFiles | Measure-Object | Select-Object Count).count
         foreach ($File in $XMLFiles) {
+            if ($totalcount -eq 0) {break}
             $progresscount++
             Write-Progress -Activity "Searching SYSVOL *.xmls for cpassword..." -Status "Currently searched through $count" -PercentComplete ($progresscount / $totalcount*100)
             $Filename = Split-Path $File -Leaf
@@ -301,8 +328,9 @@ function Get-InactiveAccounts{#lists accounts not used in past 180 days plus som
     $count = 0
     $progresscount = 0
     $inactiveaccounts = Search-ADaccount -AccountInactive -Timespan (New-TimeSpan -Days 180) -UsersOnly | Where-Object {$_.Enabled -eq $true}
-    $totalcount = $inactiveaccounts.count
+    $totalcount = ($inactiveaccounts | Measure-Object | Select-Object Count).count
     ForEach ($account in $inactiveaccounts){
+        if ($totalcount -eq 0) {break}
         $progresscount++
         Write-Progress -Activity "Searching for inactive users..." -Status "Currently identifed $count" -PercentComplete ($progresscount / $totalcount*100)
         if ($account.Enabled){
@@ -313,7 +341,7 @@ function Get-InactiveAccounts{#lists accounts not used in past 180 days plus som
     }
     if ($count -gt 0){
         Write-Both "    [!] $count inactive user accounts(180days), see accounts_inactive.txt (KB500)"
-        Write-Nessus-Finding "InactiveAccounts" "KB500" (Get-Content -Raw -Path "$outputdir\accounts_inactive.txt")
+        Write-Nessus-Finding "InactiveAccounts" "KB500" ([System.IO.File]::ReadAllText("$outputdir\accounts_inactive.txt"))
     }
 }
 function Get-AdminAccountChecks{# checks if Administrator account has been renamed, replaced and is no longer used.
@@ -336,8 +364,9 @@ function Get-AdminAccountChecks{# checks if Administrator account has been renam
 function Get-DisabledAccounts{#lists disabled accounts
     $disabledaccounts = Search-ADaccount -AccountDisabled -UsersOnly
     $count = 0
-    $totalcount = $disabledaccounts.count
+    $totalcount = ($disabledaccounts | Measure-Object | Select-Object Count).count
     ForEach ($account in $disabledaccounts){
+        if ($totalcount -eq 0) {break}
         Write-Progress -Activity "Searching for disabled users..." -Status "Currently identifed $count" -PercentComplete ($count / $totalcount*100)
         if ($account.LastLogonDate){$userlastused = $account.LastLogonDate} else {$userlastused = "Never"}
         Add-Content -Path "$outputdir\accounts_disabled.txt" -Value "Account $($account.SamAccountName) ($($account.Name)) is disabled"
@@ -345,42 +374,44 @@ function Get-DisabledAccounts{#lists disabled accounts
     }
     if ($count -gt 0){
         Write-Both "    [!] $count disabled user accounts, see accounts_disabled.txt (KB501)"
-        Write-Nessus-Finding "DisabledAccounts" "KB501" (Get-Content -Raw -Path "$outputdir\accounts_disabled.txt")
+        Write-Nessus-Finding "DisabledAccounts" "KB501" ([System.IO.File]::ReadAllText("$outputdir\accounts_disabled.txt"))
     }
 }
 function Get-AccountPassDontExpire{#lists accounts who's passwords dont expire
     $count = 0
     $nonexpiringpasswords = Search-ADAccount -PasswordNeverExpires -UsersOnly | Where-Object {$_.Enabled -eq $true}
-    $totalcount = $nonexpiringpasswords.count
+    $totalcount = ($nonexpiringpasswords | Measure-Object | Select-Object Count).count
     ForEach ($account in $nonexpiringpasswords){
+        if ($totalcount -eq 0) {break}
         Write-Progress -Activity "Searching for users with passwords that dont expire..." -Status "Currently identifed $count" -PercentComplete ($count / $totalcount*100)
         Add-Content -Path "$outputdir\accounts_passdontexpire.txt" -Value "$($account.SamAccountName) ($($account.Name))"
         $count++
     }
     if ($count -gt 0){
         Write-Both "    [!] There are $count accounts that don't expire, see accounts_passdontexpire.txt (KB254)"
-        Write-Nessus-Finding "AccountsThatDontExpire" "KB254" (Get-Content -Raw -Path "$outputdir\accounts_passdontexpire.txt")
+        Write-Nessus-Finding "AccountsThatDontExpire" "KB254" ([System.IO.File]::ReadAllText("$outputdir\accounts_passdontexpire.txt"))
     }
 }
 function Get-OldBoxes{#lists server 2000/2003/XP machines
     $count = 0
-    $oldboxes = Get-ADComputer -Filter {OperatingSystem -Like "*2003*" -and Enabled -eq "true" -or OperatingSystem -Like "*XP*" -and Enabled -eq "true" -or OperatingSystem -Like "*2000*" -and Enabled -eq "true"} -Property *
-    $totalcount = $oldboxes.count
+    $oldboxes = Get-ADComputer -Filter {OperatingSystem -Like "*2003*" -and Enabled -eq "true" -or OperatingSystem -Like "*XP*" -and Enabled -eq "true" -or OperatingSystem -Like "*2000*" -and Enabled -eq "true" -or OperatingSystem -like '*Windows 7*' -and Enabled -eq "true" -or OperatingSystem -like '*vista*' -and Enabled -eq "true" -or OperatingSystem -like '*2008*' -and Enabled -eq "true"} -Property OperatingSystem
+    $totalcount = ($oldboxes | Measure-Object | Select-Object Count).count
     ForEach ($machine in $oldboxes){
+        if ($totalcount -eq 0) {break}
         Write-Progress -Activity "Searching for 2003/XP devices joined to the domain..." -Status "Currently identifed $count" -PercentComplete ($count / $totalcount*100)
         Add-Content -Path "$outputdir\machines_old.txt" -Value "$($machine.Name), $($machine.OperatingSystem), $($machine.OperatingSystemServicePack), $($machine.OperatingSystemVersio), $($machine.IPv4Address)"
         $count++
     }
     if ($count -gt 0){
         Write-Both "    [!] We found $count machines running server 2003/XP! see machines_old.txt (KB3/37/38/KB259)"
-        Write-Nessus-Finding "OldBoxes" "KB259" (Get-Content -Raw -Path "$outputdir\machines_old.txt")
+        Write-Nessus-Finding "OldBoxes" "KB259" ([System.IO.File]::ReadAllText("$outputdir\machines_old.txt"))
     }
 }
 function Get-DCsNotOwnedByDA {#searches for DC objects not owned by the Domain Admins group
     $count = 0
     $progresscount = 0
     $domaincontrollers = Get-ADComputer -Filter {PrimaryGroupID -eq 516 -or PrimaryGroupID -eq 521} -Property *
-    $totalcount = $domaincontrollers.count
+    $totalcount = ($domaincontrollers | Measure-Object | Select-Object Count).count
     if ($totalcount -gt 0){
         ForEach ($machine in $domaincontrollers){
             $progresscount++
@@ -393,7 +424,7 @@ function Get-DCsNotOwnedByDA {#searches for DC objects not owned by the Domain A
     }
     if ($count -gt 0){
         Write-Both "    [!] We found $count DCs not owned by Domains Admins group! see dcs_not_owned_by_da.tx"
-        Write-Nessus-Finding "DCsNotByDA" "KB547" (Get-Content -Raw -Path "$outputdir\dcs_not_owned_by_da.txt")
+        Write-Nessus-Finding "DCsNotByDA" "KB547" ([System.IO.File]::ReadAllText("$outputdir\dcs_not_owned_by_da.txt"))
     }
 }
 function Get-HostDetails{#gets basic information about the host
@@ -855,6 +886,7 @@ if ($gpo -Or $all) { $running=$true; Write-Both "[*] GPO audit (and checking SYS
 if ($ouperms -Or $all) { $running=$true; Write-Both "[*] Check Generic Group AD Permissions" ; Get-OUPerms }
 if ($laps -Or $all) { $running=$true; Write-Both "[*] Check For Existence of LAPS in domain" ; Get-LAPSStatus }
 if ($authpolsilos -Or $all) { $running=$true; Write-Both "[*] Check For Existence of Authentication Polices and Silos" ; Get-AuthenticationPoliciesAndSilos }
+if ($insecurednszone -Or $all) { $running=$true; Write-Both "[*] Check For Existence DNS Zones allowing insecure updates" ; Get-DNSZoneInsecure }
 if (!$running) { Write-Both "[!] No arguments selected;"
     Write-Both "[!] Other options are as follows, they can be used in combination"
     Write-Both "    -hostdetails retrieves hostname and other useful audit info"
