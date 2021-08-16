@@ -20,7 +20,6 @@ __maintainer__ = "TheSecEng"
 __email__ = "Nope"
 __status__ = "Development"
 
-
 SCRIPT_INFO = \
     """
 NessusParser-Excel v.{0}
@@ -38,7 +37,6 @@ Latest Updates
 """.format(__version__,
            __author__,
            __website__)
-
 
 PARSER = argparse.ArgumentParser(description='Parse Nessus Files')
 PARSER.add_argument('-l', '--launch_directory',
@@ -59,6 +57,7 @@ class ColorPrint:
         /39473297/how-do-i-print-colored-output-with-python-3
         By Nicholas Stommel
     """
+
     @staticmethod
     def print_fail(message, end='\n'):
         """
@@ -93,6 +92,7 @@ class ColorPrint:
             Print bold messages
         """
         sys.stdout.write('\x1b[1;37m' + message + '\x1b[0m' + end)
+
 
 # List of Nessus files for parsing
 TO_BE_PARSED = list()
@@ -170,7 +170,8 @@ def return_match(regex, text):
     return pattern.search(text).group(1)
 
 
-def parse_nessus_file(context, func, *args, **kwargs):  # pylint: disable=too-many-statements, too-many-locals, too-many-branches, line-too-long
+def parse_nessus_file(context, func, *args,
+                      **kwargs):  # pylint: disable=too-many-statements, too-many-locals, too-many-branches, line-too-long
     """
         Paring the nessus file and generating information
     """
@@ -197,7 +198,7 @@ def parse_nessus_file(context, func, *args, **kwargs):  # pylint: disable=too-ma
             # CVSS Map Generation
             for i in range(0, 5):
                 cvss_scores[i] = {
-                    'cvss_temporal_score': 0, 'cvss_base_score': 0}
+                    'cvss_base_score': 0, 'cvss_temporal_score': 0}
 
             # Building Host Data
             if elem.find('HostProperties') is not None:
@@ -232,17 +233,18 @@ def parse_nessus_file(context, func, *args, **kwargs):  # pylint: disable=too-ma
                                                    UNIQUE_PLUGIN_NAME[plugin_name][1] + 1]
 
                 if get_child_value(child, 'cvss_base_score') != '':
-                    base_score = round(float(get_child_value(
-                        child, 'cvss_base_score')), 2)
+                    base_score = round(float(get_child_value(child, 'cvss_base_score')), 2)
                     temp_severity = int(get_attrib_value(child, 'severity'))
-                    cvss_scores[temp_severity]['cvss_base_score'] = round(cvss_scores[
-                        temp_severity]['cvss_base_score'] + base_score, 2)
+                    cvss_scores[temp_severity]['cvss_base_score'] = round(
+                        cvss_scores[temp_severity]['cvss_base_score'] + base_score, 2)
+                    # cvss_scores[temp_severity]['count_base'] = cvss_scores[temp_severity]['count_base'] + 1
+
                 if get_child_value(child, 'cvss_temporal_score') != '':
-                    base_score = round(float(get_child_value(
-                        child, 'cvss_temporal_score')), 2)
-                    temp_severity = int(get_attrib_value(child, 'severity'))
-                    cvss_scores[temp_severity]['cvss_temporal_score'] = round(cvss_scores[
-                        temp_severity]['cvss_temporal_score'] + base_score, 2)
+                    t_base_score = round(float(get_child_value(child, 'cvss_temporal_score')), 2)
+                    t_temp_severity = int(get_attrib_value(child, 'severity'))
+                    cvss_scores[t_temp_severity]['cvss_temporal_score'] = round(
+                        cvss_scores[t_temp_severity]['cvss_temporal_score'] + t_base_score, 2)
+                    # cvss_scores[t_temp_severity]['count_temporal'] = cvss_scores[t_temp_severity]['count_temporal'] + 1
 
                 # CVE Per Item
                 cve_item_list = list()
@@ -357,13 +359,24 @@ def parse_nessus_file(context, func, *args, **kwargs):  # pylint: disable=too-ma
                 for field in ATTRIB_FIELDS:
                     vuln_properties[field] = get_attrib_value(
                         child, field)
+
                 vuln_properties['port'] = get_attrib_value(child, "port")
                 vuln_properties['bid'] = ";\n".join(bid_item_list)
                 vuln_properties['cve'] = ";\n".join(cve_item_list)
+                if get_child_value(child, 'cvss_base_score') != '':
+                    vuln_properties['cvss_base_score'] = round(float(get_child_value(child, 'cvss_base_score')), 2)
+                else:
+                    vuln_properties['cvss_base_score'] = 0
+
+                if get_child_value(child, 'cvss_temporal_score') != '':
+                    vuln_properties['cvss_temporal_score'] = round(float(get_child_value(child, 'cvss_temporal_score')),
+                                                                   2)
+                else:
+                    vuln_properties['cvss_temporal_score'] = 0
 
                 vuln_data.append(vuln_properties.copy())
             host_data.append(host_properties.copy())
-            host_cvss[host_properties['host-ip']] = cvss_scores
+            host_cvss[host_properties['host-ip']] = cvss_scores.copy()
             func(elem, *args, **kwargs)
             elem.clear()
             for ancestor in elem.xpath('ancestor-or-self::*'):
@@ -371,6 +384,7 @@ def parse_nessus_file(context, func, *args, **kwargs):  # pylint: disable=too-ma
                     del ancestor.getparent()[0]
     del context
     return vuln_data, device_data, ms_process_info, count_ip_seen, host_cvss
+
 
 ###################EXCEL#####################
 
@@ -425,6 +439,10 @@ def generate_worksheets():  # pylint: disable=too-many-statements, too-many-bran
             active_ws.write(1, 21, 'CVE Information', CENTER_BORDER_FORMAT)
             active_ws.write(1, 22, 'Bugtraq ID Information',
                             CENTER_BORDER_FORMAT)
+            active_ws.write(1, 23, 'CVSS Base Score',
+                            CENTER_BORDER_FORMAT)
+            active_ws.write(1, 24, 'CVSS Temporal Score',
+                            CENTER_BORDER_FORMAT)
 
             active_ws.freeze_panes('C3')
             active_ws.autofilter('A2:V2')
@@ -451,6 +469,8 @@ def generate_worksheets():  # pylint: disable=too-many-statements, too-many-bran
             active_ws.set_column('U:U', 25)
             active_ws.set_column('V:V', 25)
             active_ws.set_column('W:W', 25)
+            active_ws.set_column('X:X', 25)
+            active_ws.set_column('Y:Y', 25)
             continue
         if sheet == "CVSS Overview":
             ROW_TRACKER[sheet] = ROW_TRACKER[sheet] + 3
@@ -653,7 +673,7 @@ def add_overview_data(sev, seen_ip):
     active_ws.write(17, 0, "Top 5 Seen Critical", LIGHT_FORMAT)
     if COMMON_CRIT:
         top_crit = sorted(COMMON_CRIT, key=lambda key:
-                          COMMON_CRIT[key], reverse=True)[:5]
+        COMMON_CRIT[key], reverse=True)[:5]
         for crit in top_crit:
             active_ws.write(17 + top_crit.index(crit),
                             1, crit, WRAP_TEXT_FORMAT)
@@ -664,7 +684,7 @@ def add_overview_data(sev, seen_ip):
     active_ws.write(23, 0, "Top 5 Seen High", LIGHT_FORMAT)
     if COMMON_HIGH:
         top_high = sorted(COMMON_HIGH, key=lambda key:
-                          COMMON_HIGH[key], reverse=True)[:5]
+        COMMON_HIGH[key], reverse=True)[:5]
         for high in top_high:
             active_ws.write(23 + top_high.index(high),
                             1, high, WRAP_TEXT_FORMAT)
@@ -690,10 +710,10 @@ def add_chart_data(data):
     # COLUMN]
     severity_chart.set_size({'width': 624, 'height': 480})
     severity_chart.add_series({
-        'name':       'Total Vulnerabilities',
+        'name': 'Total Vulnerabilities',
         'data_labels': {'value': 1},
         'categories': ["Graph Data", 2, 0, 6, 0],
-        'values':     ["Graph Data", 2, 1, 6, 1],
+        'values': ["Graph Data", 2, 1, 6, 1],
         'points': [
             {'fill': {'color': '#618ECD'}},
             {'fill': {'color': '#58BF65'}},
@@ -743,7 +763,7 @@ def add_report_data(report_data_list, the_file):
         report_ws.write(temp_cnt, 2, reportitem[
             'host-ip'], WRAP_TEXT_FORMAT)
         report_ws.write(temp_cnt, 3, int(reportitem[
-            "port"]), NUMBER_FORMAT)
+                                             "port"]), NUMBER_FORMAT)
         report_ws.write(temp_cnt, 4, reportitem[
             'host-fqdn'], WRAP_TEXT_FORMAT)
         report_ws.write(temp_cnt, 5, reportitem[
@@ -780,6 +800,10 @@ def add_report_data(report_data_list, the_file):
             'cve'], NUMBER_FORMAT)
         report_ws.write(temp_cnt, 22, reportitem[
             'bid'], NUMBER_FORMAT)
+        report_ws.write(temp_cnt, 23, reportitem[
+            'cvss_base_score'], NUMBER_FORMAT)
+        report_ws.write(temp_cnt, 24, reportitem[
+            'cvss_temporal_score'], NUMBER_FORMAT)
 
         temp_cnt += 1
     # Save the last unused row for use on the next Nessus file
@@ -931,7 +955,7 @@ def begin_parsing():  # pylint: disable=c-extension-no-member
     count_ip_seen = 0
     curr_iteration = 0
     for report in TO_BE_PARSED:
-        context = ET.iterparse(report, events=('start', 'end', ))
+        context = ET.iterparse(report, events=('start', 'end',))
         context = iter(context)
         event, root = next(context)
 
