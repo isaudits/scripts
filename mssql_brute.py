@@ -70,10 +70,10 @@ def main(argv):
         command = "msfconsole -q -n -x '" \
                   "use auxiliary/scanner/mssql/mssql_login;" \
                   "set RHOSTS " + host + ";" \
-                  "set RPORT " + port + ";" \
-                  "set DOMAIN " + domain + ";"
+                  "set RPORT " + port + ";" 
         if domain:
-            command = command + "set USE_WINDOWS_AUTHENT true;"
+            command = command + "set USE_WINDOWS_AUTHENT true;" \
+                                "set DOMAIN " + domain + ";"
         
         # either going to use a userpass file or a combination of username/userfile/password/passfile
         if wordlist:
