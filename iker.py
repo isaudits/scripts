@@ -1,4 +1,4 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python3
 '''
 iker.py script courtesy of Portcullis Security
 
@@ -131,13 +131,13 @@ FLAWCIDENUMERATION = "Client IDs could be enumerated (Risk: MEDIUM)"
 def welcome ():
 	'''This method prints a welcome message.'''
 	
-	print '''
+	print('''
 iker v. %s
 
 The ike-scan based script that checks for security flaws in IPsec-based VPNs.
 
                                by Julio Gomez ( jgo@portcullis-security.com )
-''' % VERSION
+''' % VERSION)
 	
 
 ###############################################################################
@@ -191,17 +191,17 @@ def getArguments ():
 			targets.extend (f.readlines())
 			f.close ()
 		except:
-			print "\033[91m[*]\033[0m The input file specified ('%s') could not be opened." % args.input
+			print("\033[91m[*]\033[0m The input file specified ('%s') could not be opened." % args.input)
 	
 	if args.output:
 		try:
 			f = open (args.output, "w")
 			f.close ()
 		except:
-			print "\033[91m[*]\033[0m The output file specified ('%s') could not be opened/created." % args.output
+			print("\033[91m[*]\033[0m The output file specified ('%s') could not be opened/created." % args.output)
 	
 	if not targets:
-		print "\033[91m[*]\033[0m You need to specify a target or an input file (-i)."
+		print("\033[91m[*]\033[0m You need to specify a target or an input file (-i).")
 		parser.parse_args (["-h"])
 		exit (1)
 	
@@ -217,7 +217,7 @@ def getArguments ():
 			parts = alg.split('/')
 			for p in parts:
 				if not p.isdigit():
-					print "\033[91m[*]\033[0m Wrong syntax for the encalgs parameter. Check syntax."
+					print("\033[91m[*]\033[0m Wrong syntax for the encalgs parameter. Check syntax.")
 					parser.parse_args (["-h"])
 					exit (1)
 	
@@ -225,7 +225,7 @@ def getArguments ():
 		HASHLIST = args.hashalgs.split()
 		for alg in HASHLIST:
 			if not alg.isdigit():
-				print "\033[91m[*]\033[0m Wrong syntax for the hashalgs parameter. Check syntax."
+				print("\033[91m[*]\033[0m Wrong syntax for the hashalgs parameter. Check syntax.")
 				parser.parse_args (["-h"])
 				exit (1)
 	
@@ -233,7 +233,7 @@ def getArguments ():
 		AUTHLIST = args.authmethods.split()
 		for alg in AUTHLIST:
 			if not alg.isdigit():
-				print "\033[91m[*]\033[0m Wrong syntax for the authmethods parameter. Check syntax."
+				print("\033[91m[*]\033[0m Wrong syntax for the authmethods parameter. Check syntax.")
 				parser.parse_args (["-h"])
 				exit (1)
 	
@@ -241,7 +241,7 @@ def getArguments ():
 		GROUPLIST = args.dhgroups.split()
 		for alg in GROUPLIST:
 			if not alg.isdigit():
-				print "\033[91m[*]\033[0m Wrong syntax for the dhgroups parameter. Check syntax."
+				print("\033[91m[*]\033[0m Wrong syntax for the dhgroups parameter. Check syntax.")
 				parser.parse_args (["-h"])
 				exit (1)
 	
@@ -251,7 +251,7 @@ def getArguments ():
 		f = open (XMLOUTPUT, "w")
 		f.close ()
 	except:
-		print "\033[91m[*]\033[0m The XML output file could not be opened/created."
+		print("\033[91m[*]\033[0m The XML output file could not be opened/created.")
 	
 	if args.clientids:
 		try:
@@ -259,7 +259,7 @@ def getArguments ():
 			f.close ()
 			CLIENTIDS = args.clientids
 		except:
-			print "\033[91m[*]\033[0m The client ID dictionary could not be read. This test won't be launched."
+			print("\033[91m[*]\033[0m The client ID dictionary could not be read. This test won't be launched.")
 	
 	if args.delay:
 		DELAY = args.delay
@@ -281,7 +281,7 @@ def printMessage (message, path=None):
 	@param message The message to be printed.
 	@param path The output file, if specified.'''
 	
-	print message
+	print(message)
 	
 	if path:
 		try:
@@ -300,7 +300,7 @@ def launchProccess (command):
 	process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 	
 	error = process.stderr.readlines()
-	if len(error) > 0 and "ERROR" in error[0] and "port 500" in error[0]:
+	if len(error) > 0 and b"ERROR" in error[0] and b"port 500" in error[0]:
 		printMessage ("\033[91m[*]\033[0m Something was wrong! There may be another instance of ike-scan running. Ensure that there is no other proccess using ike-scan before to launch iker.")
 		exit(1)
 	
@@ -328,7 +328,7 @@ def waitForExit (args, vpns, ip, key, value):
 		printMessage("\033[91m[*]\033[0m You pressed Ctrl+C. Do it again to exit or wait to continue but skipping this step.")
 		vpns[ip][key] = value
 		sleep(2)
-		if key not in vpns[ip].keys() or not vpns[ip][key]:
+		if key not in list(vpns[ip].keys()) or not vpns[ip][key]:
 			printMessage("[*] Skipping test...", args.output)
 	except KeyboardInterrupt:
 		parseResults (args, vpns)
@@ -349,7 +349,7 @@ def updateProgressBar (top, current, transform):
 	step = top / tt
 	# Progress: [====================] 10% : DES-MD5
 	cc = current / step
-	progressbar = progressbar.replace(".", "=", cc)
+	progressbar = progressbar.replace(".", "=", int(cc))
 	perctg = current * 100 / top
 	
 	#print progressbar % (perctg, transform),
@@ -368,7 +368,7 @@ def checkIkeScan ():
 	
 	output = proccess.stderr.read()
 	
-	if "ike-scan" in output.lower():
+	if b"ike-scan" in output.lower():
 		return True
 	else:
 		return False
@@ -395,10 +395,10 @@ def discovery (args, targets, vpns):
 		for line in process.stdout.readlines():
 			#line = line[:-1]
 			
-			if not line.split() or "Starting ike-scan" in line or "Ending ike-scan" in line:
+			if not line.split() or b"Starting ike-scan" in line or b"Ending ike-scan" in line:
 				continue
 			
-			if line[0].isdigit():
+			if line[0]:
 				
 				if info:
 					vpns[ip] = {}
@@ -414,7 +414,7 @@ def discovery (args, targets, vpns):
 			else:
 				info = info + line
 			
-		if info and ip not in vpns.keys():
+		if info and ip not in list(vpns.keys()):
 			vpns[ip] = {}
 			vpns[ip]["handshake"] = info.strip()
 			if VERBOSE:
@@ -445,15 +445,15 @@ def checkIKEv2 (args, targets, vpns):
 			
 			for line in process.stdout.readlines():
 				
-				if not line.split() or "Starting ike-scan" in line or "Ending ike-scan" in line:
+				if not line.split() or b"Starting ike-scan" in line or b"Ending ike-scan" in line:
 					continue
 				
-				if line[0].isdigit():
+				if line[0]:
 					
 					if info:
 						printMessage ("\033[92m[*]\033[0m IKE version 2 is supported by %s" % ip, args.output)
 						ips.append(ip)
-						if ip in vpns.keys():
+						if ip in list(vpns.keys()):
 							vpns[ip]["v2"] = True
 						else:
 							printMessage ("[*] IKE version 1 support was not identified in this host (%s). iker will not perform more tests against this host." % ip, args.output)
@@ -463,15 +463,15 @@ def checkIKEv2 (args, targets, vpns):
 				
 			if info and ip not in ips:
 				printMessage ("\033[92m[*]\033[0m IKE version 2 is supported by %s" % ip, args.output)
-				if ip in vpns.keys():
+				if ip in list(vpns.keys()):
 					vpns[ip]["v2"] = True
 				else:
 					printMessage ("[*] IKE version 1 support was not identified in this host (%s). iker will not perform more tests against this host." % ip, args.output)
 		
 		# Complete those that don't support it
-		for ip in vpns.keys():
+		for ip in list(vpns.keys()):
 			
-			if "v2" not in vpns[ip].keys():
+			if "v2" not in list(vpns[ip].keys()):
 				vpns[ip]["v2"] = False
 	except KeyboardInterrupt:
 		waitForExit (args, vpns, ip, "v2", False)
@@ -511,9 +511,9 @@ def fingerprintVID (args, vpns, handshake=None):
 	@param vpns A dictionary to store all the information
 	@param handshake The handshake where look for a VID'''
 	
-	for ip in vpns.keys():
+	for ip in list(vpns.keys()):
 		
-		if "vid" not in vpns[ip].keys():
+		if "vid" not in list(vpns[ip].keys()):
 			vpns[ip]["vid"] = []
 		
 		# Fingerprint based on VIDs
@@ -528,10 +528,10 @@ def fingerprintVID (args, vpns, handshake=None):
 		vid = ""
 		for line in hshk.splitlines():
 			
-			if "SA=" in line:
+			if b"SA=" in line:
 				transform = line.strip()[4:-1]
 			
-			if "VID=" in line and "(" in line and ")" in line and "draft-ietf" not in line and "IKE Fragmentation" not in line and "Dead Peer Detection" not in line and "XAUTH" not in line and "RFC 3947" not in line and "Heartbeat Notify" not in line:
+			if b"VID=" in line and b"(" in line and b")" in line and b"draft-ietf" not in line and b"IKE Fragmentation" not in line and b"Dead Peer Detection" not in line and b"XAUTH" not in line and b"RFC 3947" not in line and b"Heartbeat Notify" not in line:
 				
 				vid = line[line.index('(')+1:line.index(')')]
 		
@@ -556,7 +556,7 @@ def fingerprintShowbackoff (args, vpns, transform="", vpnip=""):
 	printMessage ( "\n[*] Trying to fingerprint the devices%s. This proccess is going to take a while (1-5 minutes per IP). Be patient..." % (transform and " (again)" or transform) , args.output)
 	
 	try:
-		for ip in vpns.keys():
+		for ip in list(vpns.keys()):
 			
 			if vpnip and vpnip != ip:
 				continue
@@ -598,7 +598,7 @@ def checkEncriptionAlgs (args, vpns):
 	try:
 		top = len(ENCLIST) * len(HASHLIST) * len(AUTHLIST) * len(GROUPLIST)
 		current = 0
-		for ip in vpns.keys():
+		for ip in list(vpns.keys()):
 			
 			printMessage ( "\n[*] Looking for accepted transforms at %s" % ip, args.output)
 			vpns[ip]["transforms"] = []
@@ -637,7 +637,7 @@ def checkEncriptionAlgs (args, vpns):
 							updateProgressBar(top, current, str(enc)+","+str(hsh)+","+str(auth)+","+str(group))
 							delay (DELAY)
 	except KeyboardInterrupt:
-		if "transforms" not in vpns[ip].keys() or not vpns[ip]["transforms"]:
+		if "transforms" not in list(vpns[ip].keys()) or not vpns[ip]["transforms"]:
 			waitForExit (args, vpns, ip, "transforms", [])
 		else:
 			waitForExit (args, vpns, ip, "transforms", vpns[ip]["transforms"])
@@ -655,7 +655,7 @@ def checkAggressive (args, vpns):
 	try:
 		top = len(ENCLIST) * len(HASHLIST) * len(AUTHLIST) * len(GROUPLIST)
 		current = 0
-		for ip in vpns.keys():
+		for ip in list(vpns.keys()):
 			
 			printMessage ( "\n[*] Looking for accepted transforms in aggressive mode at %s" % ip, args.output)
 			vpns[ip]["aggressive"] = []
@@ -695,7 +695,7 @@ def checkAggressive (args, vpns):
 							updateProgressBar(top, current, str(enc)+","+str(hsh)+","+str(auth)+","+str(group))
 							delay (DELAY)
 	except KeyboardInterrupt:
-		if "aggressive" not in vpns[ip].keys() or not vpns[ip]["aggressive"]:
+		if "aggressive" not in list(vpns[ip].keys()) or not vpns[ip]["aggressive"]:
 			waitForExit (args, vpns, ip, "aggressive", [])
 		else:
 			waitForExit (args, vpns, ip, "aggressive", vpns[ip]["aggressive"])
@@ -784,7 +784,7 @@ def enumerateGroupID (args, vpns):
 		return
 	
 	
-	for ip in vpns.keys():
+	for ip in list(vpns.keys()):
 		
 		vpns[ip]["clientids"] = []
 		
@@ -795,10 +795,10 @@ def enumerateGroupID (args, vpns):
 		
 		# Check if the device is vulnerable to Cisco DPD group ID enumeration and exploit it
 		done = False
-		if "showbackoff" in vpns[ip].keys() and "cisco" in vpns[ip]["showbackoff"].lower():
+		if "showbackoff" in list(vpns[ip].keys()) and "cisco" in vpns[ip]["showbackoff"].lower():
 			done = enumerateGroupIDCiscoDPD (args, vpns, ip)
 		
-		if "vid" in vpns[ip].keys() and len (vpns[ip]["vid"]) > 0:
+		if "vid" in list(vpns[ip].keys()) and len (vpns[ip]["vid"]) > 0:
 			for vid in vpns[ip]["vid"]:
 				if "cisco" in vid[0].lower():
 					done = enumerateGroupIDCiscoDPD (args, vpns, ip)
@@ -891,7 +891,7 @@ def parseResults (args, vpns):
 	except:
 		pass
 	
-	for ip in vpns.keys():
+	for ip in list(vpns.keys()):
 		
 		try:
 			fxml.write ("\t<service ip=\"%s\">\n\t\t<flaws>\n" % ip)
@@ -909,7 +909,7 @@ def parseResults (args, vpns):
 		
 		
 		# IKE v2
-		if "v2" in vpns[ip].keys() and vpns[ip]["v2"]:
+		if "v2" in list(vpns[ip].keys()) and vpns[ip]["v2"]:
 			printMessage ( "%s" % FLAWIKEV2SUPPORTEDC, args.output)
 			
 			try:
@@ -919,7 +919,7 @@ def parseResults (args, vpns):
 			
 		
 		# Fingerprinted by VID
-		if "vid" in vpns[ip].keys() and len (vpns[ip]["vid"]) > 0:
+		if "vid" in list(vpns[ip].keys()) and len (vpns[ip]["vid"]) > 0:
 			
 			printMessage ( "%s" % FLAWVPNFINGVIDC, args.output)
 			
@@ -935,7 +935,7 @@ def parseResults (args, vpns):
 					pass
 		
 		# Fingerprinted by back-off
-		if "showbackoff" in vpns[ip].keys() and vpns[ip]["showbackoff"].strip():
+		if "showbackoff" in list(vpns[ip].keys()) and vpns[ip]["showbackoff"].strip():
 			
 			printMessage ( "%s: %s" % (FLAWVPNFINGBACKOFFC, vpns[ip]["showbackoff"]), args.output)
 			
@@ -946,7 +946,7 @@ def parseResults (args, vpns):
 		
 		# Weak encryption/hash/DH group algorithm
 		first = True
-		if "transforms" in vpns[ip].keys():
+		if "transforms" in list(vpns[ip].keys()):
 			for trio in vpns[ip]["transforms"]:
 				
 				if "Enc=DES" in trio[1]:
@@ -995,7 +995,7 @@ def parseResults (args, vpns):
 						pass
 		
 		# Aggressive Mode ?
-		if "aggressive" in vpns[ip].keys() and len (vpns[ip]["aggressive"]) > 0:
+		if "aggressive" in list(vpns[ip].keys()) and len (vpns[ip]["aggressive"]) > 0:
 			
 			printMessage ( "%s" % FLAWAGGRESSIVEC, args.output)
 			
@@ -1019,7 +1019,7 @@ def parseResults (args, vpns):
 			
 		
 		# Client IDs ?
-		if "clientids" in vpns[ip].keys() and len (vpns[ip]["clientids"]) > 0:
+		if "clientids" in list(vpns[ip].keys()) and len (vpns[ip]["clientids"]) > 0:
 			
 			printMessage ( "%s: %s" % (FLAWCIDENUMERATIONC, ", ".join(vpns[ip]["clientids"])), args.output)
 			
@@ -1054,14 +1054,14 @@ def main ():
 	welcome ()
 	
 	if not checkPrivileges():
-		print "\033[91m[*]\033[0m This script requires root privileges. Please, come back when you grow up."
+		print("\033[91m[*]\033[0m This script requires root privileges. Please, come back when you grow up.")
 		exit(0)
 	
 	vpns = {}
 	args, targets = getArguments ()
 	
 	if not checkIkeScan():
-		print "\033[91m[*]\033[0m ike-scan could not be found. Please specified the full path with the --ikepath option."
+		print("\033[91m[*]\033[0m ike-scan could not be found. Please specified the full path with the --ikepath option.")
 		exit(2)
 	
 	printMessage ( "Starting iker (http://labs.portcullis.co.uk/tools/iker) at %s" % strftime("%a, %d %b %Y %H:%M:%S +0000", localtime()), args.output )
@@ -1070,8 +1070,8 @@ def main ():
 	discovery ( args, targets, vpns )
 	checkIKEv2 (args, targets, vpns)
 	
-	if not len(vpns.keys()):
-		print "\033[93m[*]\033[0m No IKE service was found. Bye ;)"
+	if not len(list(vpns.keys())):
+		print("\033[93m[*]\033[0m No IKE service was found. Bye ;)")
 		exit(0)
 	
 	# 2. Fingerprint by checking VIDs and by analysing the service responses
@@ -1116,6 +1116,3 @@ if  __name__ =='__main__':
 	#}
 
 #}
-
-
-
