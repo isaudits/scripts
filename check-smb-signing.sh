@@ -6,8 +6,10 @@
 # 11/01/2017 - Test of different options and conditions
 # 11/03/2017 - Added support for RunFinger.py stdout input file parsing
 # 01/12/2021 - grepable format is now default in RunFinger
+# 02/14/2022 - launch runfinger with python3 (MCJ)
+# 01/26/2023 - Fix runfinger output parsing (MCJ)
 varDateCreated="10/30/2017"
-varDateLastMod="01/12/2021"
+varDateLastMod="01/26/2023"
 
 # Set location for RunFinger.py
 varRunFingerLocation="/usr/share/responder/tools/RunFinger.py"
@@ -114,7 +116,7 @@ function fnScan {
   if [ "$varTool" = "Nmap" ]; then
     nmap -iL "$varOutDir/$varTempAddrs" -sS -Pn -n -p 445 --open --script smb-security-mode.nse > "$varOutDir/$varOutScan"
   elif [ "$varTool" = "RunFinger" ]; then
-    cat "$varOutDir/$varTempAddrs" | xargs -I % python "$varRunFingerLocation" -i % > "$varOutDir/$varOutScan"
+    cat "$varOutDir/$varTempAddrs" | xargs -I % python3 "$varRunFingerLocation" -i % > "$varOutDir/$varOutScan"
   fi
   varTimeNow=$(date +%H:%M)
   echo "$varTimeNow - $varTool completed (see $varOutScan)."
@@ -163,45 +165,21 @@ function fnParse {
       echo  >> "$varOutDir/$varOutParsed"
     fi
   elif [ "$varTool" = "RunFinger" ]; then
-    # See if scan results are grepable, stdout, or do not exist
-    varCheckResultsGrep=$(grep ", Signing:" "$varScanResults" --color=never)
-    varCheckResultsStdOut=$(grep Retrieving "$varScanResults" --color=never)
-    if [ "$varCheckResultsGrep" != "" ]; then
-      # Create 'host   result' parsed file for grepable RunFinger results
-      echo > "$varOutDir/$varOutParsed"
-      echo "=================[ check-smb-signing.sh - Ted R (github: actuated) ]=================" >> "$varOutDir/$varOutParsed"
-      echo  >> "$varOutDir/$varOutParsed"
-      awk -F, '{print $1 "\t" $4}' "$varScanResults" | tr -d [\' >> "$varOutDir/$varOutParsed"
-      echo  >> "$varOutDir/$varOutParsed"
-      echo "=======================================[ fin ]=======================================" >> "$varOutDir/$varOutParsed"
-      echo  >> "$varOutDir/$varOutParsed"
-    elif [ "$varCheckResultsStdOut" != "" ]; then
-      # Create 'host   result' parsed file for stdout RunFinger results
-      echo > "$varOutDir/$varOutParsed"
-      echo "=================[ check-smb-signing.sh - Ted R (github: actuated) ]=================" >> "$varOutDir/$varOutParsed"
-      echo  >> "$varOutDir/$varOutParsed"
-      while read varThisLine; do
-        varCheckForScanReport=$(echo "$varThisLine" | grep Retrieving --color=never)
-        if [ "$varCheckForScanReport" != "" ]; then
-          varLastHost=$(echo "$varThisLine" | awk '{print $4}' | sed 's/\.\.\.//g')
-        fi
-        varCheckForVulnState=$(echo "$varThisLine" | grep "SMB signing" --color=never)
-        if [ "$varCheckForVulnState" != "" ]; then
-          varStatus=$(echo "$varThisLine" | awk '{print "Signing:" $NF}')
-          echo -e "$varLastHost\t$varStatus" >> "$varOutDir/$varOutParsed"
-        fi
-      done < "$varScanResults"
-      echo  >> "$varOutDir/$varOutParsed"
-      echo "=======================================[ fin ]=======================================" >> "$varOutDir/$varOutParsed"
-      echo  >> "$varOutDir/$varOutParsed"            
-    elif [ "$varCheckResultsGrep" = "" ] && [ "$varCheckResultsStdOut" = "" ]; then
-      echo
-      echo "Parsing Error: $varTarget contains no 'Signing:' lines."
-      echo
-      echo "=======================================[ fin ]======================================="
-      echo
-      exit
-    fi
+    echo > "$varOutDir/$varOutParsed"
+    echo "=================[ check-smb-signing.sh - Ted R (github: actuated) ]=================" >> "$varOutDir/$varOutParsed"
+    echo  >> "$varOutDir/$varOutParsed"
+    while read varThisLine; do
+      varCheckForScanReport=$(echo "$varThisLine" | grep "Signing" --color=never)
+      if [ "$varCheckForScanReport" != "" ]; then
+        varLastHost=$(echo "$varThisLine" | grep -oE '[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}' )
+        varStatus=$(echo "$varThisLine" | grep -oE "Signing:'([A-Z]\w+)'")
+        echo -e "$varLastHost\t$varStatus" >> "$varOutDir/$varOutParsed"
+      fi
+      
+    done < "$varScanResults"
+    echo  >> "$varOutDir/$varOutParsed"
+    echo "=======================================[ fin ]=======================================" >> "$varOutDir/$varOutParsed"
+    echo  >> "$varOutDir/$varOutParsed"            
   fi
 }
 
@@ -241,8 +219,8 @@ function fnCount {
 
     # Create totals
     varTotalHosts=$(grep Signing: "$varOutDir/$varOutParsed" | wc -l )
-    varSigningFalse=$(grep Signing:False "$varOutDir/$varOutParsed" | wc -l )
-    varSigningTrue=$(grep Signing:True "$varOutDir/$varOutParsed" | wc -l )
+    varSigningFalse=$(grep "Signing:'False'" "$varOutDir/$varOutParsed" | wc -l )
+    varSigningTrue=$(grep "Signing:'True'" "$varOutDir/$varOutParsed" | wc -l )
     varPercentFalse=$(awk "BEGIN {print $varSigningFalse*100/$varTotalHosts}" | cut -c1-4)%
     varPercentTrue=$(awk "BEGIN {print $varSigningTrue*100/$varTotalHosts}" | cut -c1-4)%
 
@@ -255,10 +233,10 @@ function fnCount {
 
     # Create host lists for each result type
     if [ "$varSigningTrue" -gt "0" ]; then
-      grep Signing:True "$varOutDir/$varOutParsed" | awk '{print $1}' | sort -V > "$varOutDir/hosts-signing-true.txt"
+      grep "Signing:'True'" "$varOutDir/$varOutParsed" | awk '{print $1}' | sort -V > "$varOutDir/hosts-signing-true.txt"
     fi
     if [ "$varSigningFalse" -gt "0" ]; then
-      grep Signing:False "$varOutDir/$varOutParsed" | awk '{print $1}' | sort -V > "$varOutDir/hosts-signing-false.txt"
+      grep "Signing:'False'" "$varOutDir/$varOutParsed" | awk '{print $1}' | sort -V > "$varOutDir/hosts-signing-false.txt"
     fi
 
   fi
