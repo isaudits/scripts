@@ -10,3 +10,6 @@
 [submodule "powershell/adaudit"]
 	path = powershell/adaudit
 	url = https://github.com/phillips321/adaudit
+[submodule "powershell/ADInspect"]
+	path = powershell/ADInspect
+	url = https://github.com/soteria-security/ADInspect
