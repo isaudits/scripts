@@ -7,3 +7,6 @@
 [submodule "nse/vulscan"]
 	path = nse/vulscan
 	url = https://github.com/scipag/vulscan
+[submodule "powershell/adaudit"]
+	path = powershell/adaudit
+	url = https://github.com/phillips321/adaudit
