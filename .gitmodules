@@ -37,3 +37,6 @@
 [submodule "powershell/mimikittenz"]
 	path = powershell/mimikittenz
 	url = https://github.com/orlyjamie/mimikittenz
+[submodule "powershell/nishang"]
+	path = powershell/nishang
+	url = https://github.com/samratashok/nishang
