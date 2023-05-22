@@ -55,3 +55,6 @@
 [submodule "powershell/Windows-Workstation-and-Server-Audit"]
 	path = powershell/Windows-Workstation-and-Server-Audit
 	url = https://github.com/alanrenouf/Windows-Workstation-and-Server-Audit
+[submodule "powershell/WINspect"]
+	path = powershell/WINspect
+	url = https://github.com/A-mIn3/WINspect
