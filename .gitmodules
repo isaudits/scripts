@@ -61,3 +61,12 @@
 [submodule "powershell/Office-365-Extractor"]
 	path = powershell/Office-365-Extractor
 	url = https://github.com/PwC-IR/Office-365-Extractor
+[submodule "powershell/365BlueTeamKit"]
+	path = powershell/365BlueTeamKit
+	url = https://github.com/chaimblack/365BlueTeamKit
+[submodule "powershell/hawk"]
+	path = powershell/hawk
+	url = https://github.com/T0pCyber/hawk
+[submodule "powershell/DFIR-O365RC"]
+	path = powershell/DFIR-O365RC
+	url = https://github.com/ANSSI-FR/DFIR-O365RC
