@@ -58,3 +58,6 @@
 [submodule "powershell/WINspect"]
 	path = powershell/WINspect
 	url = https://github.com/A-mIn3/WINspect
+[submodule "powershell/Office-365-Extractor"]
+	path = powershell/Office-365-Extractor
+	url = https://github.com/PwC-IR/Office-365-Extractor
