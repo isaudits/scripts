@@ -4,3 +4,6 @@
 [submodule "NessusParser-Excel"]
 	path = NessusParser-Excel
 	url = https://github.com/TerminalFi/NessusParser-Excel
+[submodule "nse/vulscan"]
+	path = nse/vulscan
+	url = https://github.com/scipag/vulscan
