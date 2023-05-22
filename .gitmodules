@@ -25,3 +25,6 @@
 [submodule "powershell/Grouper"]
 	path = powershell/Grouper
 	url = https://github.com/l0ss/Grouper
+[submodule "powershell/Invoke-Obfuscation"]
+	path = powershell/Invoke-Obfuscation
+	url = https://github.com/danielbohannon/Invoke-Obfuscation
