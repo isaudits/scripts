@@ -46,3 +46,6 @@
 [submodule "powershell/MSOLSpray"]
 	path = powershell/MSOLSpray
 	url = https://github.com/dafthack/MSOLSpray
+[submodule "powershell/PSHTML-AD-Report"]
+	path = powershell/PSHTML-AD-Report
+	url = https://github.com/bwya77/PSHTML-AD-Report
