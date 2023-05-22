@@ -1,3 +1,0 @@
-lxml==4.6.3
-XlsxWriter==1.0.5
-argparse==1.4.0

@@ -1,7 +1,0 @@
-# PIPENV  #
-###########
-Pipfile.lock
-Pipfile
-.DS_Store
-test.nosync/
-test_script.py
