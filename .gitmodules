@@ -22,3 +22,6 @@
 [submodule "powershell/DomainPasswordSpray"]
 	path = powershell/DomainPasswordSpray
 	url = https://github.com/dafthack/DomainPasswordSpray
+[submodule "powershell/Grouper"]
+	path = powershell/Grouper
+	url = https://github.com/l0ss/Grouper
