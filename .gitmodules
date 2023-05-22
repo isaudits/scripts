@@ -1,3 +1,6 @@
 [submodule "averagesecurityguy"]
 	path = averagesecurityguy
 	url = https://github.com/averagesecurityguy/scripts
+[submodule "NessusParser-Excel"]
+	path = NessusParser-Excel
+	url = https://github.com/TerminalFi/NessusParser-Excel
