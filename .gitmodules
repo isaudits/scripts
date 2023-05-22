@@ -31,3 +31,6 @@
 [submodule "powershell/Invoke-Vnc"]
 	path = powershell/Invoke-Vnc
 	url = https://github.com/klsecservices/Invoke-Vnc
+[submodule "powershell/MailSniper"]
+	path = powershell/MailSniper
+	url = https://github.com/dafthack/MailSniper
