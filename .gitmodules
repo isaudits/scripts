@@ -73,3 +73,6 @@
 [submodule "powershell/365Inspect"]
 	path = powershell/365Inspect
 	url = https://github.com/soteria-security/365Inspect
+[submodule "powershell/MIA-MailItemsAccessed-"]
+	path = powershell/MIA-MailItemsAccessed-
+	url = https://github.com/PwC-IR/MIA-MailItemsAccessed-
