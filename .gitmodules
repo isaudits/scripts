@@ -34,3 +34,6 @@
 [submodule "powershell/MailSniper"]
 	path = powershell/MailSniper
 	url = https://github.com/dafthack/MailSniper
+[submodule "powershell/mimikittenz"]
+	path = powershell/mimikittenz
+	url = https://github.com/orlyjamie/mimikittenz
