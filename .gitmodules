@@ -28,3 +28,6 @@
 [submodule "powershell/Invoke-Obfuscation"]
 	path = powershell/Invoke-Obfuscation
 	url = https://github.com/danielbohannon/Invoke-Obfuscation
+[submodule "powershell/Invoke-Vnc"]
+	path = powershell/Invoke-Vnc
+	url = https://github.com/klsecservices/Invoke-Vnc
