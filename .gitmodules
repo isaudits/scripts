@@ -19,3 +19,6 @@
 [submodule "powershell/AzureADRecon"]
 	path = powershell/AzureADRecon
 	url = https://github.com/adrecon/AzureADRecon
+[submodule "powershell/DomainPasswordSpray"]
+	path = powershell/DomainPasswordSpray
+	url = https://github.com/dafthack/DomainPasswordSpray
