@@ -16,3 +16,6 @@
 [submodule "powershell/ADRecon"]
 	path = powershell/ADRecon
 	url = https://github.com/adrecon/ADRecon
+[submodule "powershell/AzureADRecon"]
+	path = powershell/AzureADRecon
+	url = https://github.com/adrecon/AzureADRecon
