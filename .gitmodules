@@ -40,3 +40,6 @@
 [submodule "powershell/nishang"]
 	path = powershell/nishang
 	url = https://github.com/samratashok/nishang
+[submodule "powershell/O365HTMLReport"]
+	path = powershell/O365HTMLReport
+	url = https://github.com/bwya77/O365HTMLReport
