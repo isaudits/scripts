@@ -52,3 +52,6 @@
 [submodule "powershell/SessionGopher"]
 	path = powershell/SessionGopher
 	url = https://github.com/Arvanaghi/SessionGopher
+[submodule "powershell/Windows-Workstation-and-Server-Audit"]
+	path = powershell/Windows-Workstation-and-Server-Audit
+	url = https://github.com/alanrenouf/Windows-Workstation-and-Server-Audit
