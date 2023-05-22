@@ -13,3 +13,6 @@
 [submodule "powershell/ADInspect"]
 	path = powershell/ADInspect
 	url = https://github.com/soteria-security/ADInspect
+[submodule "powershell/ADRecon"]
+	path = powershell/ADRecon
+	url = https://github.com/adrecon/ADRecon
