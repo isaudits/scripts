@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 '''
 @author: Matthew C. Jones, CPA, CISA, OSCP
 IS Audits & Consulting, LLC
@@ -57,7 +57,7 @@ def parse_nmap(nmap_outfilename):
             except:
                 pass
             
-            print output_str
+            print(output_str)
 
 def main(argv):
     
@@ -82,7 +82,7 @@ def main(argv):
     nmap_command += " -oX " + output_filename
     nmap_command += " " + target
     
-    print "Running command:\n" + nmap_command
+    print("Running command:\n" + nmap_command)
     
     subprocess.Popen(nmap_command, shell=True).wait()
         
