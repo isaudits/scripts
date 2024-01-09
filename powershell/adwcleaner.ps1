@@ -30,15 +30,20 @@ $null = New-Item -ItemType Directory -Force -Path (Split-Path -Parent $savePath)
 # Download the file
 Invoke-WebRequest -Uri $downloadUrl -OutFile $savePath
 
+# Store the start time of the script
+$startTime = Get-Date
+
 # Run the file
 Start-Process -FilePath $savePath -ArgumentList $switches -Verb RunAs -Wait
 
-# Get the most recent file in the logs directory
-$logFile = Get-ChildItem -Path $logPath | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+# Get all files in the logs directory that have been modified since the start time of the script
+$logFiles = Get-ChildItem -Path $logPath | Where-Object { $_.LastWriteTime -gt $startTime }
 
-# Read the content of the file
-$content = Get-Content -LiteralPath $logFile.FullName
+# Read the contents of the files into the $content variable
+$content = $logFiles | ForEach-Object { 
+    $_.FullName
+    Get-Content -LiteralPath $_.FullName 
+}
 
 # Output the content to the CLI
-Write-Output $logFile.FullName
 Write-Output $content
