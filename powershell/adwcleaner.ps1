@@ -37,11 +37,11 @@ $startTime = Get-Date
 Start-Process -FilePath $savePath -ArgumentList $switches -Verb RunAs -Wait
 
 # Get all files in the logs directory that have been modified since the start time of the script
-$logFiles = Get-ChildItem -Path $logPath | Where-Object { $_.LastWriteTime -gt $startTime }
+$logFiles = Get-ChildItem -Path $logPath | Where-Object { $_.LastWriteTime -gt $startTime } | Sort-Object LastWriteTime
 
 # Read the contents of the files into the $content variable
 $content = $logFiles | ForEach-Object { 
-    $_.FullName
+    "`n$($_.FullName)`n"
     Get-Content -LiteralPath $_.FullName 
 }
 
