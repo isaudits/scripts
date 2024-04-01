@@ -533,7 +533,7 @@ def fingerprintVID (args, vpns, handshake=None):
 			
 			if b"VID=" in line and b"(" in line and b")" in line and b"draft-ietf" not in line and b"IKE Fragmentation" not in line and b"Dead Peer Detection" not in line and b"XAUTH" not in line and b"RFC 3947" not in line and b"Heartbeat Notify" not in line:
 				
-				vid = line[line.index('(')+1:line.index(')')]
+				vid = line[line.index(b"(")+1:line.index(b")")]
 		
 		enc = False
 		for pair in vpns[ip]["vid"]:
