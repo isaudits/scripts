@@ -76,3 +76,6 @@
 [submodule "powershell/MIA-MailItemsAccessed-"]
 	path = powershell/MIA-MailItemsAccessed-
 	url = https://github.com/PwC-IR/MIA-MailItemsAccessed-
+[submodule "powershell/Invoke-DCSync"]
+	path = powershell/Invoke-DCSync
+	url = https://github.com/Al1ex/Invoke-DCSync
