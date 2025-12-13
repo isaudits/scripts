@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/python3
 
 ##############################################################
 # Original Credits:
@@ -148,9 +148,9 @@ def output_results(nmap_file_preamble, nmaprun, merge_job_output):
     files_processed = merge_job_output[2]
     total_hosts = merge_job_output[3]
 
-    print nmap_file_preamble
+    print(nmap_file_preamble)
     nmaprun_string = ET.tostring(nmaprun)
-    print nmaprun_string
+    print(nmaprun_string)
     for badfile in bad_file_list:
         # Throw a warning to stderror but dont interfere with the working output
         # there might be a bunch of files we dont care about in the same folder, such as nmap 'normal' outputs.
